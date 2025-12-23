@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-def detect_answers(thresh, total_questions=40, total_choices=5):
+def detect_answers(thresh, total_questions=30, total_choices=5):
     answers = []
 
     h, w = thresh.shape
