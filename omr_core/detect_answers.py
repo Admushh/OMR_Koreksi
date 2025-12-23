@@ -25,6 +25,6 @@ def detect_answers(thresh, total_questions=30, total_choices=5):
             answers.append("-")
         else:
             answers.append(chr(65 + bubbled))
-
+    
     return answers
     
