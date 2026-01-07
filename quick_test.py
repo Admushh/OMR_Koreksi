@@ -16,7 +16,8 @@ import sys
 import json
 from omr_core.preprocess import preprocess_for_detection, preprocess_for_grading
 from omr_core.detect_sheet import find_paper
-from omr_core.detect_answers import detect_answers, grade_answers
+from omr_core.detect_answers import detect_answers
+from omr_core.grading import grade_answers
 
 # ============================================================
 # CONFIGURATION - EDIT THIS SECTION
@@ -24,7 +25,7 @@ from omr_core.detect_answers import detect_answers, grade_answers
 
 # Your answer key (edit this with correct answers)
 ANSWER_KEY = {
-    1: 'A',  2: 'B',  3: 'C',  4: 'D',  5: 'E',
+    1: 'A',  2: 'D',  3: 'C',  4: 'D',  5: 'E',
     6: 'B',  7: 'C',  8: 'D',  9: 'E',  10: 'A',
     11: 'C', 12: 'D', 13: 'E', 14: 'A', 15: 'B',
     16: 'D', 17: 'E', 18: 'A', 19: 'B', 20: 'C',
@@ -33,7 +34,7 @@ ANSWER_KEY = {
 }
 
 # Input image filename (your scanned/photo OMR sheet)
-INPUT_IMAGE = "test_scanned.jpg"  # Change this to your file
+INPUT_IMAGE = "test2.jpg"  # Change this to your file
 
 # ============================================================
 # TEST SCRIPT - DON'T EDIT BELOW UNLESS YOU KNOW WHAT YOU'RE DOING

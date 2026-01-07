@@ -1,241 +1,195 @@
 import cv2
 import numpy as np
 
-def get_bubble_grid(roi, questions=15, choices=5, debug_name=""):
-    """
-    Proses satu blok kolom (misal 1-15 atau 16-30)
-    
-    Args:
-        roi: Region of interest (cropped area)
-        questions: Jumlah soal dalam kolom ini
-        choices: Jumlah pilihan (A-E = 5)
-        debug_name: Nama untuk debug output
-    
-    Returns:
-        List jawaban untuk kolom ini
-    """
+def get_bubble_grid_custom(roi, questions=15, bubble_positions=None, debug_name="", debug_img=None, start_x_global=0, start_y_global=0):
     column_answers = []
     h, w = roi.shape
     
-    # Hitung ukuran per kotak
-    box_h = h // questions
-    box_w = w // choices
-    
-    print(f"\n  Processing {debug_name}:")
-    print(f"    ROI size: {w}x{h}")
-    print(f"    Box size: {box_w}x{box_h} per bubble")
+    # Gunakan np.linspace untuk presisi Vertikal
+    y_steps = np.linspace(0, h, questions + 1).astype(int)
 
     for q in range(questions):
-        # Ambil satu baris soal
-        row = roi[q * box_h:(q + 1) * box_h, :]
+        y_start = y_steps[q]
+        y_end = y_steps[q+1]
+        row = roi[y_start:y_end, :]
         
         bubbled = None
         max_pixels = 0
         all_pixels = []
         
-        for c in range(choices):
-            # Ambil satu bubble
-            col = row[:, c * box_w:(c + 1) * box_w]
+        for c, (start_ratio, end_ratio) in enumerate(bubble_positions):
+            x_start = int(w * start_ratio)
+            x_end = int(w * end_ratio)
+            col = row[:, x_start:x_end]
             
-            # PENTING: Potong margin BESAR agar garis tabel tidak terhitung
-            # Kita ambil bagian tengah bubble saja (30% margin dari tiap sisi)
-            margin_h = int(col.shape[0] * 0.3)
-            margin_w = int(col.shape[1] * 0.3)
+            # --- ADJUSTMENT KOTAK KUNING (RESIZED) ---
+            # Margin 22% (Kotak Kuning Lebar)
+            margin_h = int(col.shape[0] * 0.22) 
+            margin_w = int(col.shape[1] * 0.22)
             
-            if col.shape[0] > margin_h*2 and col.shape[1] > margin_w*2:
-                col = col[margin_h:-margin_h, margin_w:-margin_w]
+            # Safety check
+            if col.shape[0] > margin_h*2 + 2 and col.shape[1] > margin_w*2 + 2:
+                inner_bubble = col[margin_h:-margin_h, margin_w:-margin_w]
+            else:
+                inner_bubble = col
             
-            # Hitung pixel HITAM (terisi) = 255 - putih
-            # Karena background putih, bubble terisi = hitam
-            white_pixels = cv2.countNonZero(col)
-            total = col.size - white_pixels  # Hitung pixel hitam
-            all_pixels.append(total)
+            # PENEBALAN TINTA
+            kernel = np.ones((3, 3), np.uint8)
+            inner_bubble = cv2.erode(inner_bubble, kernel, iterations=1)
+
+            white_pixels = cv2.countNonZero(inner_bubble)
+            black_pixels = inner_bubble.size - white_pixels 
+            all_pixels.append(black_pixels)
             
-            if total > max_pixels:
-                max_pixels = total
+            if black_pixels > max_pixels:
+                max_pixels = black_pixels
                 bubbled = c
+            
+            if debug_img is not None:
+                g_x1 = start_x_global + x_start + margin_w
+                g_y1 = start_y_global + y_start + margin_h
+                g_x2 = start_x_global + x_end - margin_w
+                g_y2 = start_y_global + y_end - margin_h
+                
+                if g_x2 > g_x1 and g_y2 > g_y1:
+                    cv2.rectangle(debug_img, (g_x1, g_y1), (g_x2, g_y2), (0, 165, 255), 1)
+
+        avg_pixels = sum(all_pixels) / len(all_pixels) if all_pixels else 0
         
-        # ADAPTIVE THRESHOLD: Bandingkan dengan rata-rata
-        # Jika bubble "terpilih" jauh lebih terisi dari yang lain, itu jawaban
-        avg_pixels = sum(all_pixels) / len(all_pixels)
-        
-        # Bubble harus:
-        # 1. Punya pixel HITAM > threshold minimum (ada isian)
-        # 2. Punya pixel HITAM > 1.5x rata-rata (jelas lebih terisi dari bubble kosong)
-        MIN_FILL_THRESHOLD = 100  # Pixel hitam minimum untuk dianggap terisi
+        # === ADJUSTMENT TOLERANSI DISINI ===
+        # 1. Turunkan batas minimal pixel hitam dari 50 ke 20
+        #    Agar jawaban tipis/terpotong sedikit tetap dianggap ada isinya.
+        MIN_FILL_THRESHOLD = 20 
         
         if max_pixels < MIN_FILL_THRESHOLD:
-            # Terlalu sedikit pixel = kosong
             column_answers.append(None)
-        elif max_pixels > avg_pixels * 1.5:
-            # Jelas lebih terisi dari yang lain
-            column_answers.append(chr(65 + bubbled))  # 65 = 'A'
+        # 2. Turunkan rasio perbandingan dari 1.3 ke 1.1
+        #    Agar jawaban tidak harus 'sangat kontras' dibanding noise.
+        #    Cukup sedikit lebih gelap dari rata-rata, kita anggap jawaban.
+        elif max_pixels > avg_pixels * 1.1: 
+            answer = chr(65 + bubbled)
+            column_answers.append(answer)
         else:
-            # Ambiguous atau kosong
             column_answers.append(None)
             
     return column_answers
 
-
 def detect_answers(warped_img, num_questions=30, debug=True):
-    """
-    Deteksi jawaban dari lembar OMR yang sudah diluruskan dan dibersihkan
-    
-    Args:
-        warped_img: Gambar threshold yang sudah di-warp dan clean (1000x1414)
-        num_questions: Total jumlah soal (default 30)
-        debug: Simpan debug images atau tidak
-    
-    Returns:
-        answers: Dictionary {question_num: answer} (1-based indexing)
-    """
     height, width = warped_img.shape
     
-    print(f"\n--- DETECTING ANSWERS ---")
-    print(f"Input image size: {width}x{height}")
+    print(f"\n--- DETECTING ANSWERS (HIGH TOLERANCE) ---")
     
-    # CRITICAL FIX: Pastikan image dalam format yang benar
-    # Kita butuh: Background PUTIH (255), Bubble terisi HITAM (0)
-    # Tapi kadang hasil warping = Background HITAM, Bubble PUTIH
-    
-    # Check apakah perlu di-invert
     mean_val = np.mean(warped_img)
-    print(f"Image mean value: {mean_val:.1f}")
-    
-    if mean_val < 127:  # Image lebih banyak hitam = salah!
-        print("⚠️  Image is inverted (dark background), inverting...")
+    if mean_val < 127:
         warped_img = cv2.bitwise_not(warped_img)
-        if debug:
-            cv2.imwrite("debug_inverted_fixed.png", warped_img)
-    else:
-        print("✓ Image format correct (light background)")
-    
-    # --- KONFIGURASI ROI (REGION OF INTEREST) ---
-    # Sesuaikan dengan layout LJK kamu
-    
-    start_y = int(height * 0.22)  # Skip Header (22% dari atas)
-    end_y = int(height * 0.95)    # Margin Bawah (5% dari bawah)
-    
-    # Kolom Kiri (1-15)
-    col1_start_x = int(width * 0.08)
-    col1_end_x = int(width * 0.48)
-    
-    # Kolom Kanan (16-30)
-    col2_start_x = int(width * 0.52)
-    col2_end_x = int(width * 0.92)
-    
-    print(f"ROI coordinates:")
-    print(f"  Y-range: {start_y} to {end_y}")
-    print(f"  Column 1 (Q1-15):  X={col1_start_x} to {col1_end_x}")
-    print(f"  Column 2 (Q16-30): X={col2_start_x} to {col2_end_x}")
 
-    # Crop ROI
+    # === KALIBRASI GRID ===
+    bubble_positions = [
+        (0.00, 0.20), (0.20, 0.40), (0.40, 0.60), (0.60, 0.80), (0.80, 1.00)
+    ]
+    
+    # Y-AXIS (Vertikal)
+    start_y = int(height * 0.222) 
+    end_y = int(height * 0.975)
+    
+    # X-AXIS (Horizontal)
+    col1_start_x = int(width * 0.090) 
+    col1_end_x = int(width * 0.350) 
+    col2_start_x = int(width * 0.590)
+    col2_end_x = int(width * 0.855)
+
     roi_col1 = warped_img[start_y:end_y, col1_start_x:col1_end_x]
     roi_col2 = warped_img[start_y:end_y, col2_start_x:col2_end_x]
     
-    # --- DEBUGGING ---
     if debug:
-        cv2.imwrite("debug_crop_col1.png", roi_col1)
-        cv2.imwrite("debug_crop_col2.png", roi_col2)
-        print(f"\n✓ Saved debug crops")
-        
-        # Buat visualisasi dengan garis grid
         debug_vis = cv2.cvtColor(warped_img, cv2.COLOR_GRAY2BGR)
-        
-        # Gambar kotak ROI
         cv2.rectangle(debug_vis, (col1_start_x, start_y), (col1_end_x, end_y), (0, 255, 0), 2)
         cv2.rectangle(debug_vis, (col2_start_x, start_y), (col2_end_x, end_y), (0, 255, 0), 2)
         
-        # Gambar grid untuk tiap bubble
         questions_per_col = 15
-        box_h = (end_y - start_y) // questions_per_col
-        box_w1 = (col1_end_x - col1_start_x) // 5
-        box_w2 = (col2_end_x - col2_start_x) // 5
+        y_steps = np.linspace(start_y, end_y, questions_per_col + 1).astype(int)
         
-        # Grid kolom 1
-        for i in range(questions_per_col + 1):
-            y = start_y + i * box_h
-            cv2.line(debug_vis, (col1_start_x, y), (col1_end_x, y), (255, 0, 0), 1)
-        for i in range(6):
-            x = col1_start_x + i * box_w1
+        col1_w = col1_end_x - col1_start_x
+        for y in y_steps: cv2.line(debug_vis, (col1_start_x, y), (col1_end_x, y), (255, 0, 0), 1)
+        for r_start, _ in bubble_positions:
+            x = col1_start_x + int(col1_w * r_start)
             cv2.line(debug_vis, (x, start_y), (x, end_y), (255, 0, 0), 1)
-        
-        # Grid kolom 2
-        for i in range(questions_per_col + 1):
-            y = start_y + i * box_h
-            cv2.line(debug_vis, (col2_start_x, y), (col2_end_x, y), (255, 0, 0), 1)
-        for i in range(6):
-            x = col2_start_x + i * box_w2
+            
+        col2_w = col2_end_x - col2_start_x
+        for y in y_steps: cv2.line(debug_vis, (col2_start_x, y), (col2_end_x, y), (255, 0, 0), 1)
+        for r_start, _ in bubble_positions:
+            x = col2_start_x + int(col2_w * r_start)
             cv2.line(debug_vis, (x, start_y), (x, end_y), (255, 0, 0), 1)
-        
-        cv2.imwrite("debug_grid_overlay.png", debug_vis)
-        print(f"✓ Saved grid visualization")
 
-    # Deteksi bubble untuk setiap kolom
-    answers_part1 = get_bubble_grid(roi_col1, questions=15, choices=5, debug_name="Column 1 (Q1-15)")
-    answers_part2 = get_bubble_grid(roi_col2, questions=15, choices=5, debug_name="Column 2 (Q16-30)")
+    answers_part1 = get_bubble_grid_custom(
+        roi_col1, questions=15, bubble_positions=bubble_positions,
+        debug_name="Col 1", debug_img=debug_vis if debug else None,
+        start_x_global=col1_start_x, start_y_global=start_y
+    )
+                                    
+    answers_part2 = get_bubble_grid_custom(
+        roi_col2, questions=15, bubble_positions=bubble_positions,
+        debug_name="Col 2", debug_img=debug_vis if debug else None,
+        start_x_global=col2_start_x, start_y_global=start_y
+    )
     
-    # Gabungkan dan buat dictionary dengan numbering 1-based
+    if debug:
+        cv2.imwrite("debug_grid_overlay.png", debug_vis)
+    
     all_answers = answers_part1 + answers_part2
+    answers_dict = {i: ans for i, ans in enumerate(all_answers, start=1)}
     
-    answers_dict = {}
-    for i, ans in enumerate(all_answers, start=1):
-        answers_dict[i] = ans
+    # --- PRINT FULL REPORT UNTUK CROSSCHECK ---
+    print(f"\n{'='*40}")
+    print(f"REKAP HASIL DETEKSI (RAW)")
+    print(f"{'='*40}")
+    print(f"{'No':<5} | {'Jawaban Deteksi'}")
+    print(f"{'-'*25}")
     
-    # Print hasil deteksi
-    print(f"\n📋 Detection Results:")
-    for q_num, answer in answers_dict.items():
-        status = answer if answer else "(kosong)"
-        print(f"  Q{q_num:2d}: {status}")
+    for i in range(1, 31):
+        ans = answers_dict.get(i)
+        display_ans = ans if ans is not None else "[KOSONG]"
+        print(f"Q{i:<4} | {display_ans}")
+        
+    print(f"{'='*40}\n")
     
     return answers_dict
 
-
 def grade_answers(student_answers, answer_key):
-    """
-    Nilai jawaban siswa
+    correct = 0; wrong = 0; empty = 0; details = {}
     
-    Args:
-        student_answers: Dict dari detect_answers() {q_num: answer}
-        answer_key: Dict {q_num: correct_answer}
-        
-    Returns:
-        score_info: Dict dengan detail nilai
-    """
-    correct = 0
-    wrong = 0
-    empty = 0
-    
-    details = {}
-    
+    # Header Report Grading
+    print(f"\n{'='*60}")
+    print(f"DETAIL PENILAIAN (GRADING)")
+    print(f"{'='*60}")
+    print(f"{'No':<4} | {'Siswa':<7} | {'Kunci':<7} | {'Status'}")
+    print(f"{'-'*45}")
+
     for q_num in sorted(student_answers.keys()):
         student_ans = student_answers[q_num]
         correct_ans = answer_key.get(q_num)
         
-        if student_ans is None:
+        status = ""
+        if student_ans is None: 
             empty += 1
             status = "EMPTY"
-        elif student_ans == correct_ans:
+            disp_std = "[ - ]"
+        elif student_ans == correct_ans: 
             correct += 1
             status = "CORRECT"
-        else:
+            disp_std = f"  {student_ans}  "
+        else: 
             wrong += 1
             status = "WRONG"
+            disp_std = f"  {student_ans}  "
+            
+        details[q_num] = {'student': student_ans, 'correct': correct_ans, 'status': status}
         
-        details[q_num] = {
-            'student': student_ans,
-            'correct': correct_ans,
-            'status': status
-        }
-    
-    total_questions = len(student_answers)
-    score = (correct / total_questions) * 100 if total_questions > 0 else 0
-    
-    return {
-        'score': score,
-        'correct': correct,
-        'wrong': wrong,
-        'empty': empty,
-        'total': total_questions,
-        'details': details
-    }
+        # Print baris per baris agar user bisa cek semua nomor
+        print(f"Q{q_num:<3} | {disp_std:<7} |   {correct_ans:<5} | {status}")
+
+    print(f"{'='*60}")
+
+    total = len(student_answers)
+    score = (correct / total) * 100 if total > 0 else 0
+    return {'score': score, 'correct': correct, 'wrong': wrong, 'empty': empty, 'total': total, 'details': details}

@@ -1,8 +1,8 @@
 {
-  "score": 3.3333333333333335,
-  "correct": 1,
-  "wrong": 3,
-  "empty": 26,
+  "score": 30.0,
+  "correct": 9,
+  "wrong": 21,
+  "empty": 0,
   "total": 30,
   "details": {
     "1": {
@@ -11,109 +11,109 @@
       "status": "CORRECT"
     },
     "2": {
+      "student": "D",
+      "correct": "D",
+      "status": "CORRECT"
+    },
+    "3": {
+      "student": "B",
+      "correct": "C",
+      "status": "WRONG"
+    },
+    "4": {
+      "student": "D",
+      "correct": "D",
+      "status": "CORRECT"
+    },
+    "5": {
+      "student": "E",
+      "correct": "E",
+      "status": "CORRECT"
+    },
+    "6": {
+      "student": "B",
+      "correct": "B",
+      "status": "CORRECT"
+    },
+    "7": {
+      "student": "E",
+      "correct": "C",
+      "status": "WRONG"
+    },
+    "8": {
+      "student": "B",
+      "correct": "D",
+      "status": "WRONG"
+    },
+    "9": {
+      "student": "D",
+      "correct": "E",
+      "status": "WRONG"
+    },
+    "10": {
+      "student": "B",
+      "correct": "A",
+      "status": "WRONG"
+    },
+    "11": {
+      "student": "A",
+      "correct": "C",
+      "status": "WRONG"
+    },
+    "12": {
       "student": "C",
+      "correct": "D",
+      "status": "WRONG"
+    },
+    "13": {
+      "student": "D",
+      "correct": "E",
+      "status": "WRONG"
+    },
+    "14": {
+      "student": "E",
+      "correct": "A",
+      "status": "WRONG"
+    },
+    "15": {
+      "student": "B",
+      "correct": "B",
+      "status": "CORRECT"
+    },
+    "16": {
+      "student": "B",
+      "correct": "D",
+      "status": "WRONG"
+    },
+    "17": {
+      "student": "C",
+      "correct": "E",
+      "status": "WRONG"
+    },
+    "18": {
+      "student": "B",
+      "correct": "A",
+      "status": "WRONG"
+    },
+    "19": {
+      "student": "D",
       "correct": "B",
       "status": "WRONG"
     },
-    "3": {
-      "student": null,
-      "correct": "C",
-      "status": "EMPTY"
-    },
-    "4": {
-      "student": null,
-      "correct": "D",
-      "status": "EMPTY"
-    },
-    "5": {
-      "student": null,
-      "correct": "E",
-      "status": "EMPTY"
-    },
-    "6": {
-      "student": null,
-      "correct": "B",
-      "status": "EMPTY"
-    },
-    "7": {
-      "student": null,
-      "correct": "C",
-      "status": "EMPTY"
-    },
-    "8": {
-      "student": null,
-      "correct": "D",
-      "status": "EMPTY"
-    },
-    "9": {
-      "student": null,
-      "correct": "E",
-      "status": "EMPTY"
-    },
-    "10": {
-      "student": null,
-      "correct": "A",
-      "status": "EMPTY"
-    },
-    "11": {
-      "student": null,
-      "correct": "C",
-      "status": "EMPTY"
-    },
-    "12": {
-      "student": null,
-      "correct": "D",
-      "status": "EMPTY"
-    },
-    "13": {
-      "student": null,
-      "correct": "E",
-      "status": "EMPTY"
-    },
-    "14": {
-      "student": null,
-      "correct": "A",
-      "status": "EMPTY"
-    },
-    "15": {
-      "student": null,
-      "correct": "B",
-      "status": "EMPTY"
-    },
-    "16": {
-      "student": null,
-      "correct": "D",
-      "status": "EMPTY"
-    },
-    "17": {
-      "student": null,
-      "correct": "E",
-      "status": "EMPTY"
-    },
-    "18": {
-      "student": null,
-      "correct": "A",
-      "status": "EMPTY"
-    },
-    "19": {
-      "student": null,
-      "correct": "B",
-      "status": "EMPTY"
-    },
     "20": {
-      "student": "D",
+      "student": "B",
       "correct": "C",
       "status": "WRONG"
     },
     "21": {
-      "student": null,
+      "student": "D",
       "correct": "E",
-      "status": "EMPTY"
+      "status": "WRONG"
     },
     "22": {
-      "student": null,
+      "student": "E",
       "correct": "A",
-      "status": "EMPTY"
+      "status": "WRONG"
     },
     "23": {
       "student": "A",
@@ -121,39 +121,39 @@
       "status": "WRONG"
     },
     "24": {
-      "student": null,
+      "student": "C",
       "correct": "C",
-      "status": "EMPTY"
+      "status": "CORRECT"
     },
     "25": {
-      "student": null,
+      "student": "B",
       "correct": "D",
-      "status": "EMPTY"
+      "status": "WRONG"
     },
     "26": {
-      "student": null,
+      "student": "D",
       "correct": "A",
-      "status": "EMPTY"
+      "status": "WRONG"
     },
     "27": {
-      "student": null,
+      "student": "B",
       "correct": "B",
-      "status": "EMPTY"
+      "status": "CORRECT"
     },
     "28": {
-      "student": null,
+      "student": "D",
       "correct": "C",
-      "status": "EMPTY"
+      "status": "WRONG"
     },
     "29": {
-      "student": null,
+      "student": "A",
       "correct": "D",
-      "status": "EMPTY"
+      "status": "WRONG"
     },
     "30": {
-      "student": null,
+      "student": "E",
       "correct": "E",
-      "status": "EMPTY"
+      "status": "CORRECT"
     }
   }
 }
