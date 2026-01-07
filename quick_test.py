@@ -25,16 +25,16 @@ from omr_core.grading import grade_answers
 
 # Your answer key (edit this with correct answers)
 ANSWER_KEY = {
-    1: 'A',  2: 'D',  3: 'C',  4: 'D',  5: 'E',
-    6: 'B',  7: 'C',  8: 'D',  9: 'E',  10: 'A',
-    11: 'C', 12: 'D', 13: 'E', 14: 'A', 15: 'B',
-    16: 'D', 17: 'E', 18: 'A', 19: 'B', 20: 'C',
-    21: 'E', 22: 'A', 23: 'B', 24: 'C', 25: 'D',
-    26: 'A', 27: 'B', 28: 'C', 29: 'D', 30: 'E',
+    1: 'A',  2: 'D',  3: 'B',  4: 'D',  5: 'E',
+    6: 'B',  7: 'E',  8: 'B',  9: 'D',  10: 'B',
+    11: 'A', 12: 'C', 13: 'D', 14: 'E', 15: 'B',
+    16: 'B', 17: 'C', 18: 'B', 19: 'D', 20: 'B',
+    21: 'D', 22: 'E', 23: 'A', 24: 'C', 25:'B',
+    26: 'D', 27: 'B', 28: 'D', 29: 'A', 30: 'E',
 }
 
 # Input image filename (your scanned/photo OMR sheet)
-INPUT_IMAGE = "test2.jpg"  # Change this to your file
+INPUT_IMAGE = "kunjab.jpg"  # Change this to your file
 
 # ============================================================
 # TEST SCRIPT - DON'T EDIT BELOW UNLESS YOU KNOW WHAT YOU'RE DOING
