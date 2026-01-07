@@ -3,11 +3,13 @@ import cv2
 import numpy as np
 import os
 
-from omr.preprocess import preprocess_image
-from omr.detect_sheet import find_paper
-from omr.detect_answers import detect_answers
-from omr.grading import grade_answers
+# main.py
+from omr_core.preprocess import preprocess_image
+from omr_core.detect_sheet import find_paper
+from omr_core.detect_answers import detect_answers
+from omr_core.grading import grade_answers
 
+# ... sisa kode ...
 app = FastAPI()
 ANSWER_KEY_PATH = "answer_key.txt"
 
@@ -59,3 +61,6 @@ async def scan(file: UploadFile = File(...)):
         "answers": answers,
         "result": result
     }
+#=------------------------------------------------------------->
+
+

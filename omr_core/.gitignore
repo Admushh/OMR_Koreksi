@@ -1,0 +1,45 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OMR Debug files
+debug_*.png
+test_*.png
+roi_calibration.png
+debug_*.jpg
+test_*.jpg
+
+# OMR Result files
+result.json
+test_result.json
+batch_results.json
+
+# Test images (optional - uncomment if you don't want to track test images)
+# LJK_*.png
+# sample.png
+# omr.png
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
