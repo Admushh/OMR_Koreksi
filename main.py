@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 import os
@@ -12,6 +13,14 @@ from omr_core.detect_answers import detect_answers
 from omr_core.grading import grade_answers 
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Boleh diakses dari mana aja (termasuk https://flutterflow.io)
+    allow_credentials=True,
+    allow_methods=["*"],  # Boleh semua method (POST, GET, OPTIONS, dll)
+    allow_headers=["*"],  # Boleh semua header
+)
 
 # Kita ganti ekstensi jadi .json biar jelas
 ANSWER_KEY_PATH = "answer_key.json" 
