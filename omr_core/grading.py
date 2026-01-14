@@ -7,7 +7,7 @@ def grade_answers(student_answers, answer_key):
         answer_key (dict): Dictionary of correct answers {1: 'A', 2: 'C', ...}
 
     Returns:
-        dict: A dictionary containing the score, counts, and detailed results.
+        dict: A dictionary containing the score, summary (counts), and detailed results.
     """
     correct = 0
     wrong = 0
@@ -22,6 +22,7 @@ def grade_answers(student_answers, answer_key):
         correct_ans = answer_key.get(q_num)
         
         status = ""
+        # Cek jika None atau string '-'
         if student_ans is None or student_ans == '-':
             empty += 1
             status = "EMPTY"
@@ -36,11 +37,18 @@ def grade_answers(student_answers, answer_key):
     
     score = (correct / total_questions) * 100 if total_questions > 0 else 0
 
-    return {
-        'score': round(score, 2), 
+    # --- PERUBAHAN UTAMA DI SINI ---
+    # Kita bungkus correct, wrong, empty ke dalam dictionary 'summary'
+    # biar main.py bisa bacanya pas dipanggil result.get('summary')
+    summary_data = {
         'correct': correct, 
         'wrong': wrong, 
         'empty': empty, 
-        'total': total_questions, 
+        'total': total_questions
+    }
+
+    return {
+        'score': round(score, 2), 
+        'summary': summary_data, # <--- INI KUNCINYA BANG!
         'details': details
     }

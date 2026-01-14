@@ -59,7 +59,7 @@ def preprocess_image(image):
     return thresh_final
 
 
-def preprocess_image_simple(image):
+'''def preprocess_image_simple(image):
     """
     Versi alternatif TANPA line removal - untuk testing
     Gunakan ini jika versi utama masih gagal
@@ -79,31 +79,12 @@ def preprocess_image_simple(image):
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
     
-    return thresh
+    return thresh'''
 
-
-# ============================================================
-# NEW FUNCTIONS - Add these for the two-stage preprocessing
-# ============================================================
-
-def preprocess_for_detection(image):
-    """
-    Preprocessing khusus untuk MARKER DETECTION
-    Prioritas: Jaga corner markers tetap utuh
-    
-    This is just an alias for preprocess_image_simple
-    """
-    return preprocess_image_simple(image)
 
 
 def preprocess_for_grading(warped_image):
-    """
-    Preprocessing khusus untuk BUBBLE DETECTION setelah warping
-    STRATEGI BARU: JANGAN hapus garis, biarkan detect_answers yang handle!
-    
-    Input: Warped image (sudah 1000x1414)
-    Output: Simple threshold untuk bubble detection
-    """
+
     # Jika sudah grayscale (dari warping threshold image)
     if len(warped_image.shape) == 2:
         # Sudah binary/threshold dari warping, return as-is

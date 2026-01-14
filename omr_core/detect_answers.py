@@ -22,18 +22,16 @@ def get_bubble_grid_custom(roi, questions=15, bubble_positions=None, debug_name=
             x_end = int(w * end_ratio)
             col = row[:, x_start:x_end]
             
-            # --- ADJUSTMENT KOTAK KUNING (RESIZED) ---
-            # Margin 22% (Kotak Kuning Lebar)
+         
             margin_h = int(col.shape[0] * 0.22) 
             margin_w = int(col.shape[1] * 0.22)
-            
-            # Safety check
+        
             if col.shape[0] > margin_h*2 + 2 and col.shape[1] > margin_w*2 + 2:
                 inner_bubble = col[margin_h:-margin_h, margin_w:-margin_w]
             else:
                 inner_bubble = col
             
-            # PENEBALAN TINTA
+           
             kernel = np.ones((3, 3), np.uint8)
             inner_bubble = cv2.erode(inner_bubble, kernel, iterations=1)
 
@@ -56,16 +54,13 @@ def get_bubble_grid_custom(roi, questions=15, bubble_positions=None, debug_name=
 
         avg_pixels = sum(all_pixels) / len(all_pixels) if all_pixels else 0
         
-        # === ADJUSTMENT TOLERANSI DISINI ===
-        # 1. Turunkan batas minimal pixel hitam dari 50 ke 20
-        #    Agar jawaban tipis/terpotong sedikit tetap dianggap ada isinya.
+        # 1. Tambahkan threshold minimum jumlah pixel hitam
         MIN_FILL_THRESHOLD = 20 
         
         if max_pixels < MIN_FILL_THRESHOLD:
             column_answers.append(None)
         # 2. Turunkan rasio perbandingan dari 1.3 ke 1.1
-        #    Agar jawaban tidak harus 'sangat kontras' dibanding noise.
-        #    Cukup sedikit lebih gelap dari rata-rata, kita anggap jawaban.
+  
         elif max_pixels > avg_pixels * 1.1: 
             answer = chr(65 + bubbled)
             column_answers.append(answer)
@@ -192,4 +187,4 @@ def grade_answers(student_answers, answer_key):
 
     total = len(student_answers)
     score = (correct / total) * 100 if total > 0 else 0
-    return {'score': score, 'correct': correct, 'wrong': wrong, 'empty': empty, 'total': total, 'details': details}
+    return {'Nilai': score, 'Benar': correct, 'Salah': wrong, 'Kosong': empty, 'Total': total, 'Detail': details}
