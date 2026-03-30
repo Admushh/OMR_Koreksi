@@ -5,65 +5,72 @@ def get_bubble_grid_custom(roi, questions=15, bubble_positions=None, debug_name=
     column_answers = []
     h, w = roi.shape
     
-    # Gunakan np.linspace untuk presisi Vertikal
+    # 1. Binerisasi Cerdas (Otsu Thresholding)
+    # Paksa gambar jadi murni hitam-putih. Background hitam, coretan/bulatan jadi putih.
+    # Ini sangat krusial biar gampang ngitung area isian pensil.
+    _, binary = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    
+    # 2. Hancurkan Garis Tabel (Morphology Open)
+    # Ini senjata rahasia lu: Hapus garis tipis horizontal/vertikal tabel, tapi pertahankan bulatan pensil tebal.
+    kernel_bulat = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    binary_bersih = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_bulat)
+
     y_steps = np.linspace(0, h, questions + 1).astype(int)
 
     for q in range(questions):
         y_start = y_steps[q]
         y_end = y_steps[q+1]
-        row = roi[y_start:y_end, :]
         
-        bubbled = None
+        # Kasih "ruang bernapas" 5 piksel atas bawah, biar coretan yang mbleber gak kepotong
+        overlap = 5
+        row_slice = binary_bersih[max(0, y_start-overlap):min(h, y_end+overlap), :]
+        
         max_pixels = 0
+        bubbled = -1
         all_pixels = []
         
         for c, (start_ratio, end_ratio) in enumerate(bubble_positions):
             x_start = int(w * start_ratio)
             x_end = int(w * end_ratio)
-            col = row[:, x_start:x_end]
             
-         
-            margin_h = int(col.shape[0] * 0.22) 
-            margin_w = int(col.shape[1] * 0.22)
-        
-            if col.shape[0] > margin_h*2 + 2 and col.shape[1] > margin_w*2 + 2:
-                inner_bubble = col[margin_h:-margin_h, margin_w:-margin_w]
-            else:
-                inner_bubble = col
+            # Potong per kotak opsi (A/B/C/D/E)
+            bubble_box = row_slice[:, x_start:x_end]
             
-           
-            kernel = np.ones((3, 3), np.uint8)
-            inner_bubble = cv2.erode(inner_bubble, kernel, iterations=1)
-
-            white_pixels = cv2.countNonZero(inner_bubble)
-            black_pixels = inner_bubble.size - white_pixels 
-            all_pixels.append(black_pixels)
+            # Hitung total gumpalan piksel putih di dalam kotak
+            white_pixels = cv2.countNonZero(bubble_box)
+            all_pixels.append(white_pixels)
             
-            if black_pixels > max_pixels:
-                max_pixels = black_pixels
+            if white_pixels > max_pixels:
+                max_pixels = white_pixels
                 bubbled = c
-            
-            if debug_img is not None:
-                g_x1 = start_x_global + x_start + margin_w
-                g_y1 = start_y_global + y_start + margin_h
-                g_x2 = start_x_global + x_end - margin_w
-                g_y2 = start_y_global + y_end - margin_h
                 
-                if g_x2 > g_x1 and g_y2 > g_y1:
-                    cv2.rectangle(debug_img, (g_x1, g_y1), (g_x2, g_y2), (0, 165, 255), 1)
+            # --- VISUALISASI DEBUG (KOTAK BIRU) ---
+            if debug_img is not None:
+                g_x1 = start_x_global + x_start
+                g_y1 = start_y_global + max(0, y_start-overlap)
+                g_x2 = start_x_global + x_end
+                g_y2 = start_y_global + min(h, y_end+overlap)
+                cv2.rectangle(debug_img, (g_x1, g_y1), (g_x2, g_y2), (255, 0, 0), 1)
 
+        # Rata-rata area putih dari ke-5 opsi
         avg_pixels = sum(all_pixels) / len(all_pixels) if all_pixels else 0
         
-        # 1. Tambahkan threshold minimum jumlah pixel hitam
-        MIN_FILL_THRESHOLD = 20 
+        # --- LOGIKA PENENTUAN JAWABAN (ANTI-KOSONG) ---
+        # 1. MIN_FILL: Harus ada minimal 120 piksel putih (artinya beneran diarsir, bukan ketumpahan tinta titik)
+        # 2. RASIO: Opsi tersebut harus 1.5x (50%) lebih pekat dari rata-rata opsi lain di nomor tersebut.
+        MIN_FILL_THRESHOLD = 100
         
-        if max_pixels < MIN_FILL_THRESHOLD:
-            column_answers.append(None)
-        # 2. Turunkan rasio perbandingan dari 1.3 ke 1.1
-  
-        elif max_pixels > avg_pixels * 1.1: 
+        if max_pixels > MIN_FILL_THRESHOLD and max_pixels > (avg_pixels * 1.5):
             answer = chr(65 + bubbled)
             column_answers.append(answer)
+            
+            # --- VISUALISASI DEBUG JAWABAN BENAR (KOTAK HIJAU TEBAL) ---
+            if debug_img is not None:
+                gx1 = start_x_global + int(w * bubble_positions[bubbled][0])
+                gy1 = start_y_global + max(0, y_start-overlap)
+                gx2 = start_x_global + int(w * bubble_positions[bubbled][1])
+                gy2 = start_y_global + min(h, y_end+overlap)
+                cv2.rectangle(debug_img, (gx1, gy1), (gx2, gy2), (0, 255, 0), 3)
         else:
             column_answers.append(None)
             

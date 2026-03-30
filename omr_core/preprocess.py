@@ -3,94 +3,62 @@ import numpy as np
 
 def preprocess_image(image):
     """
-    Preprocess gambar OMR dengan strategi yang lebih hati-hati
-    untuk mempertahankan marker sudut
+    Preprocess gambar OMR dengan CLAHE untuk mengatasi pencahayaan buruk,
+    tetap mempertahankan strategi proteksi marker sudut.
     """
+    # 1. Convert ke Grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # 1. Blur untuk mengurangi noise
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    # ==========================================================
+    # [BARU] IMPLEMENTASI CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    # ==========================================================
+    # clipLimit: Batas kontras (makin tinggi makin kontras, tapi noise nambah). 
+    #            Angka 2.0 - 4.0 biasanya pas buat dokumen.
+    # tileGridSize: Ukuran kotak grid pembagian. (8,8) standar OpenCV.
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced_gray = clahe.apply(gray)
+    # ==========================================================
+
+    # 2. Gaussian Blur (Penting! CLAHE kadang bikin noise naik, ini buat ngeredam)
+    blur = cv2.GaussianBlur(enhanced_gray, (5, 5), 0)
     
-    # 2. Adaptive Threshold - Parameter yang lebih konservatif
+    # 3. Adaptive Threshold (Sekarang inputnya 'blur' hasil CLAHE)
+    # Karena kontras udah diratain CLAHE, thresholding jadi jauh lebih sakti.
     thresh = cv2.adaptiveThreshold(
         blur, 255, 
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
         cv2.THRESH_BINARY_INV, 
-        11,  # Block size lebih kecil (dari 19 ke 11)
-        2    # C constant lebih kecil (dari 5 ke 2)
+        11,  # Block size
+        2    # C constant
     )
     
-    # 3. STRATEGI BARU: Proteksi Area Sudut Sebelum Hapus Garis
+    # --- SISA KODE KE BAWAH SAMA PERSIS (PROTEKSI SUDUT & HAPUS GARIS) ---
+    
     h, w = thresh.shape
     
-    # Buat mask untuk melindungi area sudut (15% dari tiap sisi)
+    # Proteksi Area Sudut (15%)
     corner_margin = 0.15
     margin_h = int(h * corner_margin)
     margin_w = int(w * corner_margin)
     
-    # Mask untuk area yang AKAN dihapus garisnya (tengah saja)
     mask_center = np.zeros_like(thresh)
     mask_center[margin_h:h-margin_h, margin_w:w-margin_w] = 255
     
-    # Copy untuk deteksi garis HANYA di area tengah
     thresh_center = cv2.bitwise_and(thresh, mask_center)
     
-    # 4. HAPUS GARIS HORIZONTAL (Hanya di tengah)
+    # Deteksi Garis Horizontal & Vertikal
     horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
-    detect_horizontal = cv2.morphologyEx(thresh_center, cv2.MORPH_OPEN, 
-                                         horizontal_kernel, iterations=2)
+    detect_horizontal = cv2.morphologyEx(thresh_center, cv2.MORPH_OPEN, horizontal_kernel, iterations=2)
     
-    # 5. HAPUS GARIS VERTIKAL (Hanya di tengah)
     vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 40))
-    detect_vertical = cv2.morphologyEx(thresh_center, cv2.MORPH_OPEN, 
-                                       vertical_kernel, iterations=2)
+    detect_vertical = cv2.morphologyEx(thresh_center, cv2.MORPH_OPEN, vertical_kernel, iterations=2)
     
-    # 6. Gabungkan semua garis yang terdeteksi
+    # Gabung & Hapus Garis
     detected_lines = cv2.add(detect_horizontal, detect_vertical)
-    
-    # 7. Hapus garis dari gambar asli
     thresh_cleaned = cv2.subtract(thresh, detected_lines)
     
-    # 8. Sedikit dilate untuk memperkuat marker & bubble
-    # TAPI kernel lebih kecil agar tidak merging marker dengan tabel
+    # Finishing
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     thresh_final = cv2.dilate(thresh_cleaned, kernel, iterations=1)
     
     return thresh_final
-
-
-'''def preprocess_image_simple(image):
-    """
-    Versi alternatif TANPA line removal - untuk testing
-    Gunakan ini jika versi utama masih gagal
-    """
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    
-    # Threshold lebih agresif untuk pastikan marker terlihat
-    thresh = cv2.adaptiveThreshold(
-        blur, 255, 
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 
-        11, 2
-    )
-    
-    # Sedikit morphology untuk clean noise
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
-    
-    return thresh'''
-
-
-
-def preprocess_for_grading(warped_image):
-
-    # Jika sudah grayscale (dari warping threshold image)
-    if len(warped_image.shape) == 2:
-        # Sudah binary/threshold dari warping, return as-is
-        return warped_image
-    else:
-        # Convert ke grayscale dan threshold
-        gray = cv2.cvtColor(warped_image, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
-        return thresh

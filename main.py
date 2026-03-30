@@ -104,7 +104,7 @@ async def upload_key(file: UploadFile = File(...)):
 @app.post("/scan")
 async def scan(
     file: UploadFile = File(...), 
-    answer_key_json: str = Form(None) # Parameter opsional dari Flutter
+    answer_key_json: str = Form(None)
 ):
     # 1. Tentukan Kunci Jawaban (Dari Parameter atau File)
     if answer_key_json:
