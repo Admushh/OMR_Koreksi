@@ -10,9 +10,6 @@ except ImportError as e:
     print("Pastikan script ini ada di folder luar (sejajar dengan folder 'omr_core')")
     sys.exit()
 
-# ==========================================
-# FUNGSI BANTUAN (LOCAL SIMPLE PREPROCESS)
-# ==========================================
 def preprocess_simple_local(image):
     """Metode sederhana untuk pembanding (Tanpa Hapus Garis & Tanpa CLAHE)"""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -45,7 +42,7 @@ def resize_for_display(image, max_height=800):
 # ==================j========================
 
 # 1. Baca Gambar
-filename = "sample.jpg"  # Ganti dengan nama file fotomu
+filename = "Kunjab.jpg"  # Ganti dengan nama file fotomu
 img = cv2.imread(filename)
 
 if img is None:

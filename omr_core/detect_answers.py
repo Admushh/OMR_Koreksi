@@ -55,9 +55,6 @@ def get_bubble_grid_custom(roi, questions=15, bubble_positions=None, debug_name=
         # Rata-rata area putih dari ke-5 opsi
         avg_pixels = sum(all_pixels) / len(all_pixels) if all_pixels else 0
         
-        # --- LOGIKA PENENTUAN JAWABAN (ANTI-KOSONG) ---
-        # 1. MIN_FILL: Harus ada minimal 120 piksel putih (artinya beneran diarsir, bukan ketumpahan tinta titik)
-        # 2. RASIO: Opsi tersebut harus 1.5x (50%) lebih pekat dari rata-rata opsi lain di nomor tersebut.
         MIN_FILL_THRESHOLD = 100
         
         if max_pixels > MIN_FILL_THRESHOLD and max_pixels > (avg_pixels * 1.5):
