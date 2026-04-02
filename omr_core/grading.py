@@ -22,7 +22,6 @@ def grade_answers(student_answers, answer_key):
         correct_ans = answer_key.get(q_num)
         
         status = ""
-        # Cek jika None atau string '-'
         if student_ans is None or student_ans == '-':
             empty += 1
             status = "EMPTY"
@@ -37,9 +36,7 @@ def grade_answers(student_answers, answer_key):
     
     score = (correct / total_questions) * 100 if total_questions > 0 else 0
 
-    # --- PERUBAHAN UTAMA DI SINI ---
-    # Kita bungkus correct, wrong, empty ke dalam dictionary 'summary'
-    # biar main.py bisa bacanya pas dipanggil result.get('summary')
+
     summary_data = {
         'correct': correct, 
         'wrong': wrong, 

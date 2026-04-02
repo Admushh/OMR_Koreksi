@@ -8,13 +8,6 @@ def preprocess_image(image):
     """
     # 1. Convert ke Grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # ==========================================================
-    # [BARU] IMPLEMENTASI CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    # ==========================================================
-    # clipLimit: Batas kontras (makin tinggi makin kontras, tapi noise nambah). 
-    #            Angka 2.0 - 4.0 biasanya pas buat dokumen.
-    # tileGridSize: Ukuran kotak grid pembagian. (8,8) standar OpenCV.
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     enhanced_gray = clahe.apply(gray)
     # ==========================================================
@@ -22,8 +15,7 @@ def preprocess_image(image):
     # 2. Gaussian Blur (Penting! CLAHE kadang bikin noise naik, ini buat ngeredam)
     blur = cv2.GaussianBlur(enhanced_gray, (5, 5), 0)
     
-    # 3. Adaptive Threshold (Sekarang inputnya 'blur' hasil CLAHE)
-    # Karena kontras udah diratain CLAHE, thresholding jadi jauh lebih sakti.
+    # 3. Adaptive Threshold (Sekarang inputnya 'blur' hasil CLAHE)  
     thresh = cv2.adaptiveThreshold(
         blur, 255, 
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
