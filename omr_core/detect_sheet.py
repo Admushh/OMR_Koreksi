@@ -152,7 +152,7 @@ def find_paper(thresh, debug_image=None):
         # Kembalikan gambar asli tanpa padding jika debug tersedia
         if debug_image is not None:
             debug_image[:] = padded_debug[padding:-padding, padding:-padding]
-        return thresh
+        return None
 
     print(f"\n✅ SUKSES: 4 Marker Zona Ditemukan!")
 

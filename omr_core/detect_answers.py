@@ -56,18 +56,41 @@ def get_bubble_grid_custom(roi, questions=15, bubble_positions=None, debug_name=
         avg_pixels = sum(all_pixels) / len(all_pixels) if all_pixels else 0
         
         MIN_FILL_THRESHOLD = 100
+        DOUBLE_BUBBLE_RATIO = 0.70  # Jika bubble lain >= 70% dari max, dianggap double
         
         if max_pixels > MIN_FILL_THRESHOLD and max_pixels > (avg_pixels * 1.5):
-            answer = chr(65 + bubbled)
-            column_answers.append(answer)
+            # --- CEK DOUBLE BUBBLE ---
+            # Cari semua bubble yang "cukup terisi" (>= 70% dari max DAN > threshold)
+            filled_bubbles = []
+            for idx, px in enumerate(all_pixels):
+                if px > MIN_FILL_THRESHOLD and px >= (max_pixels * DOUBLE_BUBBLE_RATIO):
+                    filled_bubbles.append(idx)
             
-            # --- VISUALISASI DEBUG JAWABAN BENAR (KOTAK HIJAU TEBAL) ---
-            if debug_img is not None:
-                gx1 = start_x_global + int(w * bubble_positions[bubbled][0])
-                gy1 = start_y_global + max(0, y_start-overlap)
-                gx2 = start_x_global + int(w * bubble_positions[bubbled][1])
-                gy2 = start_y_global + min(h, y_end+overlap)
-                cv2.rectangle(debug_img, (gx1, gy1), (gx2, gy2), (0, 255, 0), 3)
+            if len(filled_bubbles) > 1:
+                # DOUBLE BUBBLE TERDETEKSI!
+                answer = "DOUBLE"
+                column_answers.append(answer)
+                
+                # --- VISUALISASI DEBUG DOUBLE BUBBLE (KOTAK MERAH TEBAL) ---
+                if debug_img is not None:
+                    for fb_idx in filled_bubbles:
+                        gx1 = start_x_global + int(w * bubble_positions[fb_idx][0])
+                        gy1 = start_y_global + max(0, y_start-overlap)
+                        gx2 = start_x_global + int(w * bubble_positions[fb_idx][1])
+                        gy2 = start_y_global + min(h, y_end+overlap)
+                        cv2.rectangle(debug_img, (gx1, gy1), (gx2, gy2), (0, 0, 255), 3)  # MERAH
+            else:
+                # Single bubble — jawaban valid
+                answer = chr(65 + bubbled)
+                column_answers.append(answer)
+                
+                # --- VISUALISASI DEBUG JAWABAN BENAR (KOTAK HIJAU TEBAL) ---
+                if debug_img is not None:
+                    gx1 = start_x_global + int(w * bubble_positions[bubbled][0])
+                    gy1 = start_y_global + max(0, y_start-overlap)
+                    gx2 = start_x_global + int(w * bubble_positions[bubbled][1])
+                    gy2 = start_y_global + min(h, y_end+overlap)
+                    cv2.rectangle(debug_img, (gx1, gy1), (gx2, gy2), (0, 255, 0), 3)  # HIJAU
         else:
             column_answers.append(None)
             
@@ -147,48 +170,15 @@ def detect_answers(warped_img, num_questions=30, debug=True):
     
     for i in range(1, 31):
         ans = answers_dict.get(i)
-        display_ans = ans if ans is not None else "[KOSONG]"
+        if ans == "DOUBLE":
+            display_ans = "⚠️ [DOUBLE BUBBLE]"
+        elif ans is not None:
+            display_ans = ans
+        else:
+            display_ans = "[KOSONG]"
         print(f"Q{i:<4} | {display_ans}")
         
     print(f"{'='*40}\n")
     
     return answers_dict
-
-def grade_answers(student_answers, answer_key):
-    correct = 0; wrong = 0; empty = 0; details = {}
-    
-    # Header Report Grading
-    print(f"\n{'='*60}")
-    print(f"DETAIL PENILAIAN (GRADING)")
-    print(f"{'='*60}")
-    print(f"{'No':<4} | {'Siswa':<7} | {'Kunci':<7} | {'Status'}")
-    print(f"{'-'*45}")
-
-    for q_num in sorted(student_answers.keys()):
-        student_ans = student_answers[q_num]
-        correct_ans = answer_key.get(q_num)
-        
-        status = ""
-        if student_ans is None: 
-            empty += 1
-            status = "EMPTY"
-            disp_std = "[ - ]"
-        elif student_ans == correct_ans: 
-            correct += 1
-            status = "CORRECT"
-            disp_std = f"  {student_ans}  "
-        else: 
-            wrong += 1
-            status = "WRONG"
-            disp_std = f"  {student_ans}  "
-            
-        details[q_num] = {'student': student_ans, 'correct': correct_ans, 'status': status}
-        
-        # Print baris per baris agar user bisa cek semua nomor
-        print(f"Q{q_num:<3} | {disp_std:<7} |   {correct_ans:<5} | {status}")
-
-    print(f"{'='*60}")
-
-    total = len(student_answers)
-    score = (correct / total) * 100 if total > 0 else 0
-    return {'Nilai': score, 'Benar': correct, 'Salah': wrong, 'Kosong': empty, 'Total': total, 'Detail': details}
+

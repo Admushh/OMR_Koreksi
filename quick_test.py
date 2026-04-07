@@ -14,7 +14,7 @@ Instructions:
 import cv2
 import sys
 import json
-from omr_core.preprocess import preprocess_for_detection, preprocess_for_grading
+from omr_core.preprocess import preprocess_image
 from omr_core.detect_sheet import find_paper
 from omr_core.detect_answers import detect_answers
 from omr_core.grading import grade_answers
@@ -27,7 +27,7 @@ from omr_core.grading import grade_answers
 ANSWER_KEY = {
     1: 'A',  2: 'D',  3: 'B',  4: 'D',  5: 'E',
     6: 'B',  7: 'E',  8: 'B',  9: 'D',  10: 'B',
-    11: 'A', 12: 'C', 13: 'D', 14: 'E', 15: 'B',
+    11: 'A', 12: 'C', 13: 'B', 14: 'E', 15: 'B',
     16: 'B', 17: 'C', 18: 'B', 19: 'D', 20: 'B',
     21: 'D', 22: 'E', 23: 'A', 24: 'C', 25:'B',
     26: 'D', 27: 'B', 28: 'D', 29: 'A', 30: 'E',
@@ -58,62 +58,51 @@ def test_omr():
     print(f"\n✅ Image loaded: {INPUT_IMAGE}")
     print(f"   Size: {img.shape[1]}x{img.shape[0]} pixels")
     
-    # Step 1: Preprocess for marker detection
-    print(f"\n{'STEP 1: PREPROCESSING FOR MARKERS':-^80}")
-    thresh_detection = preprocess_for_detection(img)
-    cv2.imwrite("test_01_thresh_detection.png", thresh_detection)
-    print("   ✓ Saved: test_01_thresh_detection.png")
+    # Step 1: Preprocess
+    print(f"\n{'STEP 1: PREPROCESSING':-^80}")
+    processed = preprocess_image(img)
+    cv2.imwrite("test_01_preprocessed.png", processed)
+    print("   ✓ Saved: test_01_preprocessed.png")
     
     # Step 2: Detect markers and warp
     print(f"\n{'STEP 2: DETECTING MARKERS':-^80}")
     debug_img = img.copy()
-    warped = find_paper(thresh_detection, debug_image=debug_img)
+    warped = find_paper(processed, debug_image=debug_img)
     
     cv2.imwrite("test_02_marker_detection.png", debug_img)
     print("   ✓ Saved: test_02_marker_detection.png")
     
-    if warped.shape != (1414, 1000):
+    if warped is None:
         print(f"\n❌ ERROR: Marker detection failed!")
-        print(f"   Expected size: 1000x1414, Got: {warped.shape[1]}x{warped.shape[0]}")
         print(f"\nTroubleshooting:")
         print(f"  1. Check test_02_marker_detection.png - are all 4 corners marked in GREEN?")
         print(f"  2. Make sure your OMR sheet has BLACK SQUARES in all 4 corners")
         print(f"  3. Try adjusting lighting or rescanning")
         return False
     
-    cv2.imwrite("test_03_warped_raw.png", warped)
-    print("   ✓ Saved: test_03_warped_raw.png")
-    print(f"   ✓ Sheet detected successfully!")
+    cv2.imwrite("test_03_warped.png", warped)
+    print(f"   ✓ Saved: test_03_warped.png")
+    print(f"   ✓ Sheet detected successfully! Size: {warped.shape[1]}x{warped.shape[0]}")
     
-    # Step 3: Clean for grading
-    print(f"\n{'STEP 3: CLEANING FOR BUBBLE DETECTION':-^80}")
-    clean_warped = preprocess_for_grading(warped)
-    cv2.imwrite("test_04_warped_clean.png", clean_warped)
-    print("   ✓ Saved: test_04_warped_clean.png")
+    # Step 3: Detect answers
+    print(f"\n{'STEP 3: DETECTING BUBBLES':-^80}")
+    answers = detect_answers(warped, debug=True)
     
-    # Step 4: Detect answers
-    print(f"\n{'STEP 4: DETECTING BUBBLES':-^80}")
-    answers = detect_answers(clean_warped, debug=True)
-    # This will save:
-    # - test_05_crop_col1.png
-    # - test_05_crop_col2.png  
-    # - test_05_grid_overlay.png
-    
-    # Step 5: Grade
-    print(f"\n{'STEP 5: GRADING':-^80}")
+    # Step 4: Grade
+    print(f"\n{'STEP 4: GRADING':-^80}")
     result = grade_answers(answers, ANSWER_KEY)
     
     # Display results
     print(f"\n{'RESULTS':-^80}")
     print(f"\n  📊 SCORE: {result['score']:.1f}/100")
-    print(f"  ✅ Correct:  {result['correct']:2d}/{result['total']}")
-    print(f"  ❌ Wrong:    {result['wrong']:2d}/{result['total']}")
-    print(f"  ⚪ Empty:    {result['empty']:2d}/{result['total']}")
+    print(f"  ✅ Correct:  {result['summary']['correct']:2d}/{result['summary']['total']}")
+    print(f"  ❌ Wrong:    {result['summary']['wrong']:2d}/{result['summary']['total']}")
+    print(f"  ⚪ Empty:    {result['summary']['empty']:2d}/{result['summary']['total']}")
     
     # Show wrong/empty answers
     print(f"\n  📝 DETAILS:")
     
-    if result['wrong'] + result['empty'] == 0:
+    if result['summary']['wrong'] + result['summary']['empty'] == 0:
         print(f"     🎉 PERFECT SCORE! All answers correct!")
     else:
         print(f"     Wrong/Empty answers:")
@@ -133,13 +122,10 @@ def test_omr():
     # Summary of debug files
     print(f"\n{'DEBUG FILES SAVED':-^80}")
     print(f"  📁 Visual inspection files:")
-    print(f"     1. test_01_thresh_detection.png  - Are markers visible as WHITE squares?")
-    print(f"     2. test_02_marker_detection.png  - Are all 4 corners marked GREEN?")
-    print(f"     3. test_03_warped_raw.png        - Is sheet straight and aligned?")
-    print(f"     4. test_04_warped_clean.png      - Are bubbles clear without table lines?")
-    print(f"     5. debug_crop_col1.png           - Left column bubbles")
-    print(f"     6. debug_crop_col2.png           - Right column bubbles")
-    print(f"     7. debug_grid_overlay.png        - Grid alignment check")
+    print(f"     1. test_01_preprocessed.png       - Preprocessed threshold image")
+    print(f"     2. test_02_marker_detection.png    - Are all 4 corners marked GREEN?")
+    print(f"     3. test_03_warped.png              - Is sheet straight and aligned?")
+    print(f"     4. debug_grid_overlay.png          - Grid alignment check")
     print("="*80)
     
     return True

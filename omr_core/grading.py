@@ -4,6 +4,7 @@ def grade_answers(student_answers, answer_key):
 
     Args:
         student_answers (dict): Dictionary of student's answers {1: 'A', 2: 'B', ...}
+                                Can also contain 'DOUBLE' for double-bubble answers.
         answer_key (dict): Dictionary of correct answers {1: 'A', 2: 'C', ...}
 
     Returns:
@@ -12,6 +13,7 @@ def grade_answers(student_answers, answer_key):
     correct = 0
     wrong = 0
     empty = 0
+    double = 0
     details = {}
     
     # Use the answer key's questions as the source of truth for total questions
@@ -22,7 +24,10 @@ def grade_answers(student_answers, answer_key):
         correct_ans = answer_key.get(q_num)
         
         status = ""
-        if student_ans is None or student_ans == '-':
+        if student_ans == "DOUBLE":
+            double += 1
+            status = "DOUBLE"
+        elif student_ans is None or student_ans == '-':
             empty += 1
             status = "EMPTY"
         elif student_ans == correct_ans:
@@ -41,11 +46,12 @@ def grade_answers(student_answers, answer_key):
         'correct': correct, 
         'wrong': wrong, 
         'empty': empty, 
+        'double': double,
         'total': total_questions
     }
 
     return {
         'score': round(score, 2), 
-        'summary': summary_data, # <--- INI KUNCINYA BANG!
+        'summary': summary_data,
         'details': details
-    }
+    }
