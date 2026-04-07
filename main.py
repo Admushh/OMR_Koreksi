@@ -71,6 +71,41 @@ async def read_image_file(file: UploadFile):
         print(f"Error reading file: {e}")
         raise HTTPException(status_code=400, detail="Gagal membaca file gambar.")
 
+def find_paper_with_fallback(image, pad=40):
+    """
+    Coba deteksi marker LJK. Jika gagal (efek auto-crop scanner),
+    retry sekali lagi dengan menambahkan padding putih di sekeliling gambar.
+
+    Strategi 'retry with fallback' ini lebih efisien daripada selalu
+    menambahkan padding — gambar normal dari scanner yang lurus tidak
+    perlu overhead tambahan, sementara gambar hasil auto-crop agresif
+    tetap bisa diselamatkan di percobaan kedua.
+    """
+    # Percobaan 1: Normal, tanpa padding tambahan
+    processed = preprocess_image(image)
+    warped = find_paper(processed)
+
+    if warped is not None:
+        print("[INFO] Marker detected on first attempt (no padding needed).")
+        return warped
+
+    # Percobaan 2: Tambahkan padding putih — kemungkinan efek auto-crop scanner
+    print("[WARN] Marker not found. Retrying with safe padding (auto-crop fallback)...")
+    padded = cv2.copyMakeBorder(
+        image, pad, pad, pad, pad,
+        cv2.BORDER_CONSTANT,
+        value=[255, 255, 255]
+    )
+    processed_padded = preprocess_image(padded)
+    warped_padded = find_paper(processed_padded)
+
+    if warped_padded is not None:
+        print("[INFO] Marker detected after padding. Auto-crop issue resolved.")
+    else:
+        print("[ERROR] Marker not found even after padding.")
+
+    return warped_padded
+
 # ==========================================
 # ENDPOINTS
 # ==========================================
@@ -82,9 +117,9 @@ async def upload_key(file: UploadFile = File(...)):
 
     # Proses OMR untuk Kunci Jawaban
     try:
-        processed = preprocess_image(image)
-        warped = find_paper(processed)
-        
+        # Deteksi marker dengan fallback padding jika auto-crop scanner terlalu agresif
+        warped = find_paper_with_fallback(image)
+
         if warped is None:
              raise HTTPException(status_code=400, detail="Kertas LJK tidak terdeteksi. Pastikan foto jelas & background kontras.")
 
@@ -112,7 +147,7 @@ async def scan(
             raw_key = json.loads(answer_key_json)
             # Pastikan key jadi integer
             answer_key = {int(k): v for k, v in raw_key.items()}
-        except:
+        except (json.JSONDecodeError, ValueError, KeyError):
              raise HTTPException(status_code=400, detail="Format kunci jawaban (JSON) tidak valid")
     else:
         answer_key = load_answer_key()
@@ -122,9 +157,9 @@ async def scan(
 
     try:
         # 3. Proses OMR
-        processed = preprocess_image(image)
-        warped = find_paper(processed)
-        
+        # Deteksi marker dengan fallback padding jika auto-crop scanner terlalu agresif
+        warped = find_paper_with_fallback(image)
+
         if warped is None:
              raise HTTPException(status_code=400, detail="Kertas LJK tidak terdeteksi.")
 

@@ -6,7 +6,7 @@ def preprocess_debug(image):
     Preprocess OMR image (IMPROVED VERSION)
     Fokus: minim noise + bubble tetap jelas
     """
-    steps = [] # <--- PENAMPUNG GAMBAR (PENTING)
+    steps = [] 
 
     # 1. Grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -22,7 +22,7 @@ def preprocess_debug(image):
     steps.append(("3. Blur", blur))
 
     # ==========================================
-    # 4. THRESHOLD (GANTI KE OTSU)
+    # 4. THRESHOLD
     # ==========================================
     _, thresh = cv2.threshold(
         blur, 0, 255,
@@ -31,7 +31,7 @@ def preprocess_debug(image):
     steps.append(("4. OTSU", thresh))
 
     # ==========================================
-    # 5. NOISE REMOVAL (PENTING BANGET)
+    # 5. NOISE REMOVAL 
     # ==========================================
     kernel_noise = np.ones((3,3), np.uint8)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_noise)
@@ -39,7 +39,6 @@ def preprocess_debug(image):
 
     # ==========================================
     # 6. PROTEKSI SUDUT
-    # ==========================================
     h, w = thresh.shape
     margin = 0.15
 
@@ -51,7 +50,6 @@ def preprocess_debug(image):
 
     thresh_center = cv2.bitwise_and(thresh, mask_center)
 
-    # ==========================================
     # 7. DETECT GARIS
     # ==========================================
     horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
