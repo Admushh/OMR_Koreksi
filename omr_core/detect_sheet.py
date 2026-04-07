@@ -21,10 +21,11 @@ def order_points(pts):
     
     return rect
 
-def is_near_edge(x, y, w, h, img_w, img_h, margin=0.15):
+def is_near_edge(x, y, w, h, img_w, img_h, margin=0.25):
     """
     Cek apakah titik (x,y) dekat dengan tepi gambar.
-    margin: persentase jarak dari tepi (0.15 = 15% dari lebar/tinggi)
+    margin: persentase jarak dari tepi (0.25 = 25% dari lebar/tinggi)
+    Diperlonggar dari 0.15 biar toleran terhadap foto miring.
     """
     edge_margin_w = img_w * margin
     edge_margin_h = img_h * margin
@@ -72,21 +73,21 @@ def find_paper(thresh, debug_image=None):
         area = cv2.contourArea(c)
         
         # Filter Luas - DIPERLONGGAR:
-        # Min: Hindari noise kecil
+        # Min: 80 (turun dari 150, biar marker kecil di foto jauh masih kedetect)
         # Max: Naikkan ke 0.35 untuk toleransi marker lebih besar
-        if area < 150 or area > (h_img * w_img * 0.35): 
+        if area < 80 or area > (h_img * w_img * 0.35): 
             continue
         
         peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.04 * peri, True)
+        approx = cv2.approxPolyDP(c, 0.05 * peri, True)  # 0.04 → 0.05 (lebih toleran bentuk)
         
-        # Harus Kotak (4-6 sudut toleransi)
-        if 4 <= len(approx) <= 6:
+        # Harus Kotak (3-8 sudut toleransi, diperlonggar dari 4-6)
+        if 3 <= len(approx) <= 8:
             x, y, w, h = cv2.boundingRect(approx)
             aspect_ratio = w / float(h)
             
-            # Filter Rasio Kotak - DIPERLONGGAR: 0.6-1.5
-            if 0.6 <= aspect_ratio <= 1.5:
+            # Filter Rasio Kotak - DIPERLONGGAR: 0.4-2.5 (biar toleran perspektif miring)
+            if 0.4 <= aspect_ratio <= 2.5:
                 # CEK PROXIMITY KE TEPI - INI YANG PENTING!
                 if not is_near_edge(x, y, w, h, w_img, h_img):
                     continue  # Skip jika tidak di sudut
