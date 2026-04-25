@@ -1,0 +1,127 @@
+{
+  "Kunjab.jpg": {
+    "timings": {
+      "preprocess_markers": 19.4,
+      "find_paper": 23.0,
+      "warp_gray": 4.1,
+      "preprocess_answers": 2.1,
+      "detect_answers": 49.2
+    },
+    "accuracy": {
+      "correct": 30,
+      "wrong": 0,
+      "empty": 0,
+      "double": 0,
+      "total": 30,
+      "pct": 100.0,
+      "problems": []
+    },
+    "detected_answers": {
+      "1": "A",
+      "2": "D",
+      "3": "B",
+      "4": "D",
+      "5": "E",
+      "6": "B",
+      "7": "E",
+      "8": "B",
+      "9": "D",
+      "10": "B",
+      "11": "A",
+      "12": "C",
+      "13": "D",
+      "14": "E",
+      "15": "B",
+      "16": "B",
+      "17": "C",
+      "18": "B",
+      "19": "D",
+      "20": "B",
+      "21": "D",
+      "22": "E",
+      "23": "A",
+      "24": "C",
+      "25": "B",
+      "26": "D",
+      "27": "B",
+      "28": "D",
+      "29": "A",
+      "30": "E"
+    },
+    "errors": [],
+    "used_padding": false
+  },
+  "sample 2.png": {
+    "timings": {
+      "preprocess_markers": 7.3,
+      "find_paper": 19.6,
+      "warp_gray": 3.3,
+      "preprocess_answers": 2.4,
+      "detect_answers": 58.1
+    },
+    "accuracy": {
+      "correct": 26,
+      "wrong": 4,
+      "empty": 0,
+      "double": 0,
+      "total": 30,
+      "pct": 86.7,
+      "problems": [
+        [
+          26,
+          "E",
+          "A"
+        ],
+        [
+          27,
+          "E",
+          "B"
+        ],
+        [
+          28,
+          "E",
+          "C"
+        ],
+        [
+          29,
+          "E",
+          "D"
+        ]
+      ]
+    },
+    "detected_answers": {
+      "1": "A",
+      "2": "B",
+      "3": "C",
+      "4": "D",
+      "5": "E",
+      "6": "A",
+      "7": "B",
+      "8": "C",
+      "9": "D",
+      "10": "E",
+      "11": "A",
+      "12": "B",
+      "13": "C",
+      "14": "D",
+      "15": "E",
+      "16": "A",
+      "17": "B",
+      "18": "C",
+      "19": "D",
+      "20": "E",
+      "21": "A",
+      "22": "B",
+      "23": "C",
+      "24": "D",
+      "25": "E",
+      "26": "E",
+      "27": "E",
+      "28": "E",
+      "29": "E",
+      "30": "E"
+    },
+    "errors": [],
+    "used_padding": false
+  }
+}

@@ -5,19 +5,13 @@ import numpy as np
 import os
 import json
 
-# ==========================================
-# IMPORT MODUL OMR (Sesuaikan dengan struktur folder lu)
-# ==========================================
-from omr_core.preprocess import preprocess_image
-from omr_core.detect_sheet import find_paper
+from omr_core.preprocess import preprocess_for_markers, preprocess_for_answers
+from omr_core.detect_sheet import find_paper, order_points
 from omr_core.detect_answers import detect_answers
-from omr_core.grading import grade_answers 
+from omr_core.grading import grade_answers
 
 app = FastAPI()
 
-# ==========================================
-# SETUP CORS (Biar bisa diakses FlutterFlow)
-# ==========================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,174 +20,193 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-ANSWER_KEY_PATH = "answer_key.json" 
+ANSWER_KEY_PATH = "answer_key.json"
 
-# ==========================================
-# HELPER FUNCTIONS
-# ==========================================
+# ──────────────────────────────────────────────────────────────
+# HELPERS
+# ──────────────────────────────────────────────────────────────
+
 def load_answer_key():
-    """Load kunci jawaban dari file JSON lokal di server."""
     if not os.path.exists(ANSWER_KEY_PATH):
-        raise HTTPException(status_code=400, detail="Answer key not found. Please upload key first.")
-    
+        raise HTTPException(status_code=400,
+            detail="Answer key not found. Please upload key first.")
     with open(ANSWER_KEY_PATH, "r") as f:
         try:
             data = json.load(f)
-            # JSON key selalu string ("1"), convert jadi int (1)
             return {int(k): v for k, v in data.items()}
         except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail="Format Answer Key rusak/salah.")
+            raise HTTPException(status_code=500,
+                detail="Format Answer Key rusak/salah.")
 
-async def read_image_file(file: UploadFile):
-    """Fungsi aman untuk membaca file gambar dari upload."""
-    try:
-        # 1. Pastikan cursor file ada di awal
-        await file.seek(0)
-        
-        # 2. Baca isi file
-        contents = await file.read()
-        
-        # 3. Cek apakah kosong
-        if len(contents) == 0:
-            raise HTTPException(status_code=400, detail="File gambar kosong.")
-            
-        # 4. Convert ke numpy array
-        nparr = np.frombuffer(contents, np.uint8)
-        
-        # 5. Decode image
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        if image is None:
-            raise HTTPException(status_code=400, detail="Format gambar tidak valid/rusak.")
-            
-        return image
-    except Exception as e:
-        print(f"Error reading file: {e}")
-        raise HTTPException(status_code=400, detail="Gagal membaca file gambar.")
 
-def find_paper_with_fallback(image, pad=40):
+async def read_image_file(file: UploadFile) -> np.ndarray:
+    """Read uploaded image file and return BGR ndarray."""
+    allowed = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
+    if file.content_type and file.content_type not in allowed:
+        raise HTTPException(status_code=400,
+            detail=f"Format tidak didukung: {file.content_type}. Gunakan JPG/PNG/WebP.")
+
+    await file.seek(0)
+    contents = await file.read()
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="File gambar kosong.")
+
+    nparr = np.frombuffer(contents, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(status_code=400,
+            detail="Format gambar tidak valid atau file rusak.")
+    return image
+
+
+def find_paper_with_fallback(image: np.ndarray):
     """
-    Coba deteksi marker LJK. Jika gagal (efek auto-crop scanner),
-    retry sekali lagi dengan menambahkan padding putih di sekeliling gambar.
+    Detect markers with fallback padding for auto-cropped scanner images.
 
-    Strategi 'retry with fallback' ini lebih efisien daripada selalu
-    menambahkan padding — gambar normal dari scanner yang lurus tidak
-    perlu overhead tambahan, sementara gambar hasil auto-crop agresif
-    tetap bisa diselamatkan di percobaan kedua.
+    Returns (warped_gray, answers_ready) or raises HTTPException.
+    
+    Pipeline:
+    1. preprocess_for_markers() → binary for marker detection
+    2. find_paper(binary) → (warped_binary, M_warp)
+    3. Warp original grayscale using M_warp → warped_gray
+    4. preprocess_for_answers(warped_gray) → enhanced for bubble detection
     """
-    # Percobaan 1: Normal, tanpa padding tambahan
-    processed = preprocess_image(image)
-    warped = find_paper(processed)
 
-    if warped is not None:
-        print("[INFO] Marker detected on first attempt (no padding needed).")
-        return warped
+    def _try_detect(src_image):
+        """Attempt marker detection on a source image. Returns (warped_ready, warped_gray) or None."""
+        thresh = preprocess_for_markers(src_image)
+        result = find_paper(thresh)
 
-    # Percobaan 2: Tambahkan padding putih — kemungkinan efek auto-crop scanner
-    print("[WARN] Marker not found. Retrying with safe padding (auto-crop fallback)...")
-    padded = cv2.copyMakeBorder(
-        image, pad, pad, pad, pad,
-        cv2.BORDER_CONSTANT,
-        value=[255, 255, 255]
-    )
-    processed_padded = preprocess_image(padded)
-    warped_padded = find_paper(processed_padded)
+        if result is None:
+            return None
 
-    if warped_padded is not None:
-        print("[INFO] Marker detected after padding. Auto-crop issue resolved.")
-    else:
-        print("[ERROR] Marker not found even after padding.")
+        warped_binary, M_warp = result
 
-    return warped_padded
+        # Warp the ORIGINAL grayscale image (not binary) for bubble detection
+        src_gray = cv2.cvtColor(src_image, cv2.COLOR_BGR2GRAY)
+        warped_gray = cv2.warpPerspective(src_gray, M_warp, (1000, 1414))
 
-# ==========================================
+        # Enhance for answer detection
+        warped_ready = preprocess_for_answers(warped_gray)
+
+        return warped_ready
+
+    # --- Attempt 1: direct ---
+    result = _try_detect(image)
+    if result is not None:
+        print("[pipeline] Markers found on 1st attempt.")
+        return result
+
+    # --- Attempt 2: add white padding (handles aggressive auto-crop scanners) ---
+    PAD = 50
+    padded = cv2.copyMakeBorder(image, PAD, PAD, PAD, PAD,
+                                cv2.BORDER_CONSTANT, value=[255, 255, 255])
+    result = _try_detect(padded)
+    if result is not None:
+        print("[pipeline] Markers found after padding (auto-crop fallback).")
+        return result
+
+    return None
+
+
+def process_ljk(image: np.ndarray, num_questions: int = 30, debug: bool = False):
+    """
+    Full pipeline: raw image → answers dict.
+    """
+    warped_ready = find_paper_with_fallback(image)
+
+    if warped_ready is None:
+        return None, None
+
+    # Detect answers on enhanced grayscale
+    answers = detect_answers(warped_ready, num_questions=num_questions, debug=debug)
+
+    return answers, warped_ready
+
+
+# ──────────────────────────────────────────────────────────────
 # ENDPOINTS
-# ==========================================
+# ──────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "version": "3.0"}
+
 
 @app.post("/upload-key")
 async def upload_key(file: UploadFile = File(...)):
-    # Baca gambar dengan aman
     image = await read_image_file(file)
-
-    # Proses OMR untuk Kunci Jawaban
     try:
-        # Deteksi marker dengan fallback padding jika auto-crop scanner terlalu agresif
-        warped = find_paper_with_fallback(image)
+        key, _ = process_ljk(image, num_questions=30, debug=False)
+        if key is None:
+            raise HTTPException(status_code=400,
+                detail="Kertas LJK tidak terdeteksi. Pastikan foto jelas & background kontras.")
 
-        if warped is None:
-             raise HTTPException(status_code=400, detail="Kertas LJK tidak terdeteksi. Pastikan foto jelas & background kontras.")
-
-        # Deteksi jawaban (Misal: {1: 'A', 2: 'B'})
-        key = detect_answers(warped, num_questions=30, debug=False)
-
-        # Simpan ke file JSON
+        # Save key
         with open(ANSWER_KEY_PATH, "w") as f:
             json.dump(key, f, indent=4)
 
         return {"message": "Key saved successfully", "key": key}
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        print(f"[upload-key] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
 @app.post("/scan")
 async def scan(
-    file: UploadFile = File(...), 
-    answer_key_json: str = Form(None)
+    file: UploadFile = File(...),
+    answer_key_json: str = Form(None),
+    num_questions: int = Form(30),
 ):
-    # 1. Tentukan Kunci Jawaban (Dari Parameter atau File)
+    # 1. Resolve answer key
     if answer_key_json:
         try:
             raw_key = json.loads(answer_key_json)
-            # Pastikan key jadi integer
             answer_key = {int(k): v for k, v in raw_key.items()}
         except (json.JSONDecodeError, ValueError, KeyError):
-             raise HTTPException(status_code=400, detail="Format kunci jawaban (JSON) tidak valid")
+            raise HTTPException(status_code=400,
+                detail="Format kunci jawaban (JSON) tidak valid.")
     else:
         answer_key = load_answer_key()
 
-    # 2. Baca Gambar Siswa dengan Aman
+    # 2. Read image
     image = await read_image_file(file)
 
     try:
-        # 3. Proses OMR
-        # Deteksi marker dengan fallback padding jika auto-crop scanner terlalu agresif
-        warped = find_paper_with_fallback(image)
+        # 3. Full OMR pipeline
+        student_answers, _ = process_ljk(image, num_questions=num_questions, debug=False)
 
-        if warped is None:
-             raise HTTPException(status_code=400, detail="Kertas LJK tidak terdeteksi.")
+        if student_answers is None:
+            raise HTTPException(status_code=400,
+                detail="Kertas LJK tidak terdeteksi. Pastikan foto jelas & 4 marker sudut terlihat.")
 
-        student_answers = detect_answers(warped, num_questions=30, debug=False)
-        
-        # 4. Grading / Penilaian
+        # 4. Grade
         result = grade_answers(student_answers, answer_key)
 
-        # 5. Transformasi Data untuk FlutterFlow
-        # Mengubah Dictionary 'details' menjadi List of Dictionary
+        # 5. Build response (FlutterFlow-friendly list format)
         details_list = []
-        
-        # Loop hasil grading (format: {1: {'student': 'A', 'status': 'WRONG'}, ...})
-        if 'details' in result:
-            for q_num, info in result['details'].items():
+        if "details" in result:
+            for q_num, info in result["details"].items():
                 details_list.append({
                     "question_no": int(q_num),
-                    "student_answer": str(info['student']) if info['student'] else "-", # Handle None
-                    "correct_answer": str(info['correct']) if info['correct'] else "?", # Handle None
-                    "status": str(info['status'])
+                    "student_answer": str(info["student"]) if info["student"] else "-",
+                    "correct_answer": str(info["correct"]) if info["correct"] else "?",
+                    "status": str(info["status"]),
                 })
+        details_list.sort(key=lambda x: x["question_no"])
 
-        # Urutkan berdasarkan nomor soal
-        details_list.sort(key=lambda x: x['question_no'])
-
-        # 6. Return Response
         return {
-            "score": result.get('score', 0),
-            "summary": result.get('summary', {}),
-            "student_answers": student_answers, # Tetap kirim raw data buat debug
-            "details": details_list # <--- INI YANG DIPAKE DI FLUTTERFLOW (LIST)
+            "score": result.get("score", 0),
+            "summary": result.get("summary", {}),
+            "student_answers": student_answers,
+            "details": details_list,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error processing scan: {e}") # Print error di terminal biar kebaca
+        print(f"[scan] Error: {e}")
         raise HTTPException(status_code=500, detail=f"Gagal memproses LJK: {str(e)}")
-

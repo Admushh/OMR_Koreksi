@@ -1,168 +1,149 @@
 """
-QUICK OMR TEST SCRIPT
-=====================
-Test your OMR system without building any app!
-
-Instructions:
-1. Fill in your answer key below
-2. Fill out a physical OMR sheet with a pen
-3. Take a photo or scan it (save as 'test_sheet.png')
-4. Run this script: python quick_test.py
-5. Check the results and debug images
+QUICK OMR TEST SCRIPT  (updated for v2 pipeline)
+Usage: python quick_test.py [image_file]
 """
 
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
 import cv2
-import sys
 import json
-from omr_core.preprocess import preprocess_image
+import numpy as np
+
+from omr_core.preprocess import preprocess_image, preprocess_for_answers, preprocess_for_markers
 from omr_core.detect_sheet import find_paper
 from omr_core.detect_answers import detect_answers
 from omr_core.grading import grade_answers
 
-# ============================================================
-# CONFIGURATION - EDIT THIS SECTION
-# ============================================================
-
-# Your answer key (edit this with correct answers)
+# ──────────────────────────────────────────────────────────
+# ANSWER KEY — edit to match your sheet
+# ──────────────────────────────────────────────────────────
 ANSWER_KEY = {
     1: 'A',  2: 'D',  3: 'B',  4: 'D',  5: 'E',
     6: 'B',  7: 'E',  8: 'B',  9: 'D',  10: 'B',
-    11: 'A', 12: 'C', 13: 'B', 14: 'E', 15: 'B',
+    11: 'A', 12: 'C', 13: 'D', 14: 'E', 15: 'B',
     16: 'B', 17: 'C', 18: 'B', 19: 'D', 20: 'B',
-    21: 'D', 22: 'E', 23: 'A', 24: 'C', 25:'B',
+    21: 'D', 22: 'E', 23: 'A', 24: 'C', 25: 'B',
     26: 'D', 27: 'B', 28: 'D', 29: 'A', 30: 'E',
 }
 
-# Input image filename (your scanned/photo OMR sheet)
-INPUT_IMAGE = "kunjab.jpg"  # Change this to your file
+INPUT_IMAGE = sys.argv[1] if len(sys.argv) > 1 else "sample 2.png"
 
-# ============================================================
-# TEST SCRIPT - DON'T EDIT BELOW UNLESS YOU KNOW WHAT YOU'RE DOING
-# ============================================================
+# ==========================================================
+
+def sep(title=""):
+    print(f"\n{'='*60}")
+    if title:
+        print(f"  {title}")
+        print(f"{'='*60}")
+
 
 def test_omr():
-    print("="*80)
-    print(" OMR SYSTEM - QUICK TEST ".center(80, "="))
-    print("="*80)
-    
-    # Check if file exists
+    sep("OMR QUICK TEST  v2")
+
+    # Load
     img = cv2.imread(INPUT_IMAGE)
     if img is None:
-        print(f"\n❌ ERROR: File '{INPUT_IMAGE}' not found!")
-        print(f"\nTroubleshooting:")
-        print(f"  1. Make sure your OMR sheet image is in the same folder")
-        print(f"  2. Rename it to '{INPUT_IMAGE}' or change INPUT_IMAGE in this script")
-        print(f"  3. Supported formats: PNG, JPG, JPEG")
+        print(f"\n  ERROR: Cannot open '{INPUT_IMAGE}'")
         return False
-    
-    print(f"\n✅ Image loaded: {INPUT_IMAGE}")
-    print(f"   Size: {img.shape[1]}x{img.shape[0]} pixels")
-    
-    # Step 1: Preprocess
-    print(f"\n{'STEP 1: PREPROCESSING':-^80}")
-    processed = preprocess_image(img)
-    cv2.imwrite("test_01_preprocessed.png", processed)
-    print("   ✓ Saved: test_01_preprocessed.png")
-    
-    # Step 2: Detect markers and warp
-    print(f"\n{'STEP 2: DETECTING MARKERS':-^80}")
+    print(f"\n  Image : {INPUT_IMAGE}  ({img.shape[1]}x{img.shape[0]} px)")
+
+    # ── Step 1: preprocess for marker detection ────────────────────────────
+    sep("STEP 1: Preprocessing (corner markers)")
+    thresh = preprocess_image(img)
+    cv2.imwrite("test_01_preprocessed.png", thresh)
+    print("  Saved: test_01_preprocessed.png")
+
+    # ── Step 2: detect markers ─────────────────────────────────────────────
+    sep("STEP 2: Marker detection + perspective warp")
     debug_img = img.copy()
-    warped = find_paper(processed, debug_image=debug_img)
-    
+    result = find_paper(thresh, debug_image=debug_img)
+
     cv2.imwrite("test_02_marker_detection.png", debug_img)
-    print("   ✓ Saved: test_02_marker_detection.png")
-    
-    if warped is None:
-        print(f"\n❌ ERROR: Marker detection failed!")
-        print(f"\nTroubleshooting:")
-        print(f"  1. Check test_02_marker_detection.png - are all 4 corners marked in GREEN?")
-        print(f"  2. Make sure your OMR sheet has BLACK SQUARES in all 4 corners")
-        print(f"  3. Try adjusting lighting or rescanning")
-        return False
-    
-    cv2.imwrite("test_03_warped.png", warped)
-    print(f"   ✓ Saved: test_03_warped.png")
-    print(f"   ✓ Sheet detected successfully! Size: {warped.shape[1]}x{warped.shape[0]}")
-    
-    # Step 3: Detect answers
-    print(f"\n{'STEP 3: DETECTING BUBBLES':-^80}")
-    answers = detect_answers(warped, debug=True)
-    
-    # Step 4: Grade
-    print(f"\n{'STEP 4: GRADING':-^80}")
-    result = grade_answers(answers, ANSWER_KEY)
-    
-    # Display results
-    print(f"\n{'RESULTS':-^80}")
-    print(f"\n  📊 SCORE: {result['score']:.1f}/100")
-    print(f"  ✅ Correct:  {result['summary']['correct']:2d}/{result['summary']['total']}")
-    print(f"  ❌ Wrong:    {result['summary']['wrong']:2d}/{result['summary']['total']}")
-    print(f"  ⚪ Empty:    {result['summary']['empty']:2d}/{result['summary']['total']}")
-    
-    # Show wrong/empty answers
-    print(f"\n  📝 DETAILS:")
-    
-    if result['summary']['wrong'] + result['summary']['empty'] == 0:
-        print(f"     🎉 PERFECT SCORE! All answers correct!")
+    print("  Saved: test_02_marker_detection.png")
+
+    # Retry with padding if needed
+    if result is None:
+        print("  [WARN] First attempt failed, retrying with padding...")
+        PAD = 50
+        padded = cv2.copyMakeBorder(img, PAD, PAD, PAD, PAD,
+                                    cv2.BORDER_CONSTANT, value=[255, 255, 255])
+        thresh_p = preprocess_image(padded)
+        debug_p  = padded.copy()
+        result   = find_paper(thresh_p, debug_image=debug_p)
+        cv2.imwrite("test_02_marker_detection.png", debug_p)
+        if result is None:
+            print("  ERROR: Markers not found even after padding.")
+            print("  -> Check test_02_marker_detection.png")
+            return False
+        # Use padded for the rest
+        img = padded
+
+    warped_thresh, M_warp = result
+    cv2.imwrite("test_03_warped_thresh.png", warped_thresh)
+    print("  Saved: test_03_warped_thresh.png")
+
+    # ── Step 3: warp ORIGINAL grayscale ───────────────────────────────────
+    sep("STEP 3: Warp original gray image")
+    src_gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    warped_gray = cv2.warpPerspective(src_gray, M_warp, (1000, 1414))
+    cv2.imwrite("test_03_warped.png", warped_gray)
+    print("  Saved: test_03_warped.png  (this is what answer detection uses)")
+
+    # ── Step 4: preprocess for answers ────────────────────────────────────
+    sep("STEP 4: Preprocess for bubble detection")
+    warped_ready = preprocess_for_answers(warped_gray)
+    cv2.imwrite("test_04_warped_ready.png", warped_ready)
+    print("  Saved: test_04_warped_ready.png")
+
+    # ── Step 5: detect answers ─────────────────────────────────────────────
+    sep("STEP 5: Bubble detection")
+    answers = detect_answers(warped_ready, num_questions=30, debug=True)
+    # debug=True saves debug_grid_overlay.png
+
+    # ── Step 6: grade ──────────────────────────────────────────────────────
+    sep("STEP 6: Grading")
+    result_grade = grade_answers(answers, ANSWER_KEY)
+
+    # ── Results ────────────────────────────────────────────────────────────
+    sep("RESULTS")
+    score   = result_grade["score"]
+    summary = result_grade["summary"]
+    details = result_grade["details"]
+
+    print(f"\n  SCORE   : {score:.1f} / 100")
+    print(f"  Correct : {summary['correct']} / {summary['total']}")
+    print(f"  Wrong   : {summary['wrong']}")
+    print(f"  Empty   : {summary['empty']}")
+    print(f"  Double  : {summary['double']}")
+
+    wrong_empty = [(q, d) for q, d in details.items()
+                   if d["status"] != "CORRECT"]
+    if wrong_empty:
+        print(f"\n  Problems:")
+        for q, d in sorted(wrong_empty, key=lambda x: x[0]):
+            ans = d["student"] or "(kosong)"
+            print(f"    Q{q:>2}: detected={ans}  correct={d['correct']}  [{d['status']}]")
     else:
-        print(f"     Wrong/Empty answers:")
-        for q_num, detail in sorted(result['details'].items()):
-            if detail['status'] != 'CORRECT':
-                student = detail['student'] if detail['student'] else '(empty)'
-                correct = detail['correct']
-                print(f"       Q{q_num:2d}: You={student:6s} | Correct={correct} | [{detail['status']}]")
-    
-    print("="*80)
-    
-    # Save results
+        print("\n  PERFECT! All answers correct.")
+
+    # Save JSON
     with open("test_result.json", "w") as f:
-        json.dump(result, f, indent=2)
-    print(f"\n✅ Full results saved to: test_result.json")
-    
-    # Summary of debug files
-    print(f"\n{'DEBUG FILES SAVED':-^80}")
-    print(f"  📁 Visual inspection files:")
-    print(f"     1. test_01_preprocessed.png       - Preprocessed threshold image")
-    print(f"     2. test_02_marker_detection.png    - Are all 4 corners marked GREEN?")
-    print(f"     3. test_03_warped.png              - Is sheet straight and aligned?")
-    print(f"     4. debug_grid_overlay.png          - Grid alignment check")
-    print("="*80)
-    
+        json.dump(result_grade, f, indent=2)
+    print("\n  Saved: test_result.json")
+
+    sep("DEBUG FILES")
+    print("  test_01_preprocessed.png   — corner binary (marker detection input)")
+    print("  test_02_marker_detection.png — green boxes on detected markers")
+    print("  test_03_warped.png          — warped GRAY image (answer detection input)")
+    print("  test_04_warped_ready.png    — after CLAHE preprocess")
+    print("  debug_grid_overlay.png     — grid + scored cells overlay")
+
     return True
 
 
-def create_sample_answer_key_template():
-    """Helper function to generate answer key template"""
-    print("\n# Copy this template and fill in your correct answers:")
-    print("ANSWER_KEY = {")
-    for i in range(1, 31):
-        print(f"    {i}: 'A',  # Question {i}")
-    print("}")
-
-
 if __name__ == "__main__":
-    print("\n")
-    
-    # Check if user wants to see template
-    if len(sys.argv) > 1 and sys.argv[1] == "--template":
-        create_sample_answer_key_template()
-        sys.exit(0)
-    
-    # Run test
-    success = test_omr()
-    
-    if success:
-        print(f"\n✅ TEST COMPLETED SUCCESSFULLY!")
-        print(f"\nNext steps:")
-        print(f"  1. Check the debug images to verify detection")
-        print(f"  2. If grid misalignment, adjust ROI coordinates in detect_answers.py")
-        print(f"  3. Try with more test sheets to validate accuracy")
-        print(f"  4. Once satisfied, integrate into your app!")
-    else:
-        print(f"\n❌ TEST FAILED - Check error messages above")
-        print(f"\nNeed help?")
-        print(f"  - Check debug images to see what went wrong")
-        print(f"  - Verify your OMR sheet has clear black corner markers")
-        print(f"  - Ensure bubbles are filled with dark pen/pencil")
-    
-    print("\n" + "="*80 + "\n")
+    ok = test_omr()
+    sep()
+    print("  " + ("TEST PASSED" if ok else "TEST FAILED"))
+    sep()

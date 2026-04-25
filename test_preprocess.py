@@ -112,7 +112,7 @@ def show_grid(thresh_final):
 # =========================
 # MAIN
 # =========================
-img = cv2.imread("Kunjab.jpg")
+img = cv2.imread("sample 2.png")
 
 steps = preprocess_debug(img)
 show_grid(steps)

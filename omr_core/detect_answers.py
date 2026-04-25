@@ -1,184 +1,219 @@
+"""
+detect_answers.py — Robust LJK Answer Detection (v3-robust)
+============================================================
+
+Detects student answers (A, B, C, D, E) from a warped, preprocessed
+grayscale image.
+
+Key improvements over v2:
+- Uses the enhanced grayscale image for scoring, NOT binary.
+- Bubble score is based on mean pixel intensity instead of positive pixel count.
+- Z-score based statistical detection instead of global absolute thresholds.
+  (This naturally adapts to local shadows or lighting gradients per row).
+- Detects multiple filled answers as "DOUBLE" if they have similar scores.
+"""
+
 import cv2
 import numpy as np
 
-def get_bubble_grid_custom(roi, questions=15, bubble_positions=None, debug_name="", debug_img=None, start_x_global=0, start_y_global=0):
-    column_answers = []
-    h, w = roi.shape
+
+# Option constants
+OPTIONS = ['A', 'B', 'C', 'D', 'E']
+
+
+def _score_bubble(cell_img):
+    """
+    Score a bubble based on its darkness.
+    Input: cell image (grayscale, already cropped to the bubble area)
     
-    # 1. Binerisasi Cerdas (Otsu Thresholding)
-    # Paksa gambar jadi murni hitam-putih. Background hitam, coretan/bulatan jadi putih.
-    # Ini sangat krusial biar gampang ngitung area isian pensil.
-    _, binary = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    Returns: float score (higher = darker/filled).
+    Formula: 255 - mean_intensity
     
-    # 2. Hancurkan Garis Tabel (Morphology Open)
-    # Ini senjata rahasia lu: Hapus garis tipis horizontal/vertikal tabel, tapi pertahankan bulatan pensil tebal.
-    kernel_bulat = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    binary_bersih = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_bulat)
+    Why this is better than binary pixel count:
+    A lightly shaded bubble might not cross a binary threshold, but its
+    overall average intensity will still be markedly lower (darker) than a blank bubble.
+    """
+    if cell_img.size == 0:
+        return 0.0
 
-    y_steps = np.linspace(0, h, questions + 1).astype(int)
+    mean_val = np.mean(cell_img)
+    # Invert so that black (0) = 255 score, white (255) = 0 score
+    return 255.0 - mean_val
 
-    for q in range(questions):
-        y_start = y_steps[q]
-        y_end = y_steps[q+1]
-        
-        # Kasih "ruang bernapas" 5 piksel atas bawah, biar coretan yang mbleber gak kepotong
-        overlap = 5
-        row_slice = binary_bersih[max(0, y_start-overlap):min(h, y_end+overlap), :]
-        
-        max_pixels = 0
-        bubbled = -1
-        all_pixels = []
-        
-        for c, (start_ratio, end_ratio) in enumerate(bubble_positions):
-            x_start = int(w * start_ratio)
-            x_end = int(w * end_ratio)
-            
-            # Potong per kotak opsi (A/B/C/D/E)
-            bubble_box = row_slice[:, x_start:x_end]
-            
-            # Hitung total gumpalan piksel putih di dalam kotak
-            white_pixels = cv2.countNonZero(bubble_box)
-            all_pixels.append(white_pixels)
-            
-            if white_pixels > max_pixels:
-                max_pixels = white_pixels
-                bubbled = c
-                
-            # --- VISUALISASI DEBUG (KOTAK BIRU) ---
-            if debug_img is not None:
-                g_x1 = start_x_global + x_start
-                g_y1 = start_y_global + max(0, y_start-overlap)
-                g_x2 = start_x_global + x_end
-                g_y2 = start_y_global + min(h, y_end+overlap)
-                cv2.rectangle(debug_img, (g_x1, g_y1), (g_x2, g_y2), (255, 0, 0), 1)
 
-        # Rata-rata area putih dari ke-5 opsi
-        avg_pixels = sum(all_pixels) / len(all_pixels) if all_pixels else 0
-        
-        MIN_FILL_THRESHOLD = 100
-        DOUBLE_BUBBLE_RATIO = 0.70  # Jika bubble lain >= 70% dari max, dianggap double
-        
-        if max_pixels > MIN_FILL_THRESHOLD and max_pixels > (avg_pixels * 1.5):
-            # --- CEK DOUBLE BUBBLE ---
-            # Cari semua bubble yang "cukup terisi" (>= 70% dari max DAN > threshold)
-            filled_bubbles = []
-            for idx, px in enumerate(all_pixels):
-                if px > MIN_FILL_THRESHOLD and px >= (max_pixels * DOUBLE_BUBBLE_RATIO):
-                    filled_bubbles.append(idx)
-            
-            if len(filled_bubbles) > 1:
-                # DOUBLE BUBBLE TERDETEKSI!
-                answer = "DOUBLE"
-                column_answers.append(answer)
-                
-                # --- VISUALISASI DEBUG DOUBLE BUBBLE (KOTAK MERAH TEBAL) ---
-                if debug_img is not None:
-                    for fb_idx in filled_bubbles:
-                        gx1 = start_x_global + int(w * bubble_positions[fb_idx][0])
-                        gy1 = start_y_global + max(0, y_start-overlap)
-                        gx2 = start_x_global + int(w * bubble_positions[fb_idx][1])
-                        gy2 = start_y_global + min(h, y_end+overlap)
-                        cv2.rectangle(debug_img, (gx1, gy1), (gx2, gy2), (0, 0, 255), 3)  # MERAH
-            else:
-                # Single bubble — jawaban valid
-                answer = chr(65 + bubbled)
-                column_answers.append(answer)
-                
-                # --- VISUALISASI DEBUG JAWABAN BENAR (KOTAK HIJAU TEBAL) ---
-                if debug_img is not None:
-                    gx1 = start_x_global + int(w * bubble_positions[bubbled][0])
-                    gy1 = start_y_global + max(0, y_start-overlap)
-                    gx2 = start_x_global + int(w * bubble_positions[bubbled][1])
-                    gy2 = start_y_global + min(h, y_end+overlap)
-                    cv2.rectangle(debug_img, (gx1, gy1), (gx2, gy2), (0, 255, 0), 3)  # HIJAU
-        else:
-            column_answers.append(None)
-            
-    return column_answers
+def _read_column(working_gray, x_start, x_end, y_start, y_end,
+                 n_questions, debug_img=None):
+    """
+    Scan n_questions rows in a column region.
+    Returns list of 'A'–'E', 'DOUBLE', or None per question.
+    """
+    col_w = x_end - x_start
+    col_h = y_end - y_start
+    roi = working_gray[y_start:y_end, x_start:x_end]
+    y_cuts = np.linspace(0, col_h, n_questions + 1, dtype=int)
 
-def detect_answers(warped_img, num_questions=30, debug=True):
-    height, width = warped_img.shape
-    
-    print(f"\n--- DETECTING ANSWERS (HIGH TOLERANCE) ---")
-    
-    mean_val = np.mean(warped_img)
-    if mean_val < 127:
-        warped_img = cv2.bitwise_not(warped_img)
-
-    # === KALIBRASI GRID ===
-    bubble_positions = [
-        (0.00, 0.20), (0.20, 0.40), (0.40, 0.60), (0.60, 0.80), (0.80, 1.00)
+    # Standard bounds for 5 options evenly spaced
+    OPTION_BOUNDS = [
+        (0.00, 0.20),  # Option A
+        (0.20, 0.40),  # Option B
+        (0.40, 0.60),  # Option C
+        (0.60, 0.80),  # Option D
+        (0.80, 1.00),  # Option E
     ]
-    
-    # Y-AXIS (Vertikal)
-    start_y = int(height * 0.222) 
-    end_y = int(height * 0.975)
-    
-    # X-AXIS (Horizontal)
-    col1_start_x = int(width * 0.090) 
-    col1_end_x = int(width * 0.350) 
-    col2_start_x = int(width * 0.590)
-    col2_end_x = int(width * 0.855)
 
-    roi_col1 = warped_img[start_y:end_y, col1_start_x:col1_end_x]
-    roi_col2 = warped_img[start_y:end_y, col2_start_x:col2_end_x]
-    
-    if debug:
-        debug_vis = cv2.cvtColor(warped_img, cv2.COLOR_GRAY2BGR)
-        cv2.rectangle(debug_vis, (col1_start_x, start_y), (col1_end_x, end_y), (0, 255, 0), 2)
-        cv2.rectangle(debug_vis, (col2_start_x, start_y), (col2_end_x, end_y), (0, 255, 0), 2)
-        
-        questions_per_col = 15
-        y_steps = np.linspace(start_y, end_y, questions_per_col + 1).astype(int)
-        
-        col1_w = col1_end_x - col1_start_x
-        for y in y_steps: cv2.line(debug_vis, (col1_start_x, y), (col1_end_x, y), (255, 0, 0), 1)
-        for r_start, _ in bubble_positions:
-            x = col1_start_x + int(col1_w * r_start)
-            cv2.line(debug_vis, (x, start_y), (x, end_y), (255, 0, 0), 1)
-            
-        col2_w = col2_end_x - col2_start_x
-        for y in y_steps: cv2.line(debug_vis, (col2_start_x, y), (col2_end_x, y), (255, 0, 0), 1)
-        for r_start, _ in bubble_positions:
-            x = col2_start_x + int(col2_w * r_start)
-            cv2.line(debug_vis, (x, start_y), (x, end_y), (255, 0, 0), 1)
+    answers = []
 
-    answers_part1 = get_bubble_grid_custom(
-        roi_col1, questions=15, bubble_positions=bubble_positions,
-        debug_name="Col 1", debug_img=debug_vis if debug else None,
-        start_x_global=col1_start_x, start_y_global=start_y
-    )
-                                    
-    answers_part2 = get_bubble_grid_custom(
-        roi_col2, questions=15, bubble_positions=bubble_positions,
-        debug_name="Col 2", debug_img=debug_vis if debug else None,
-        start_x_global=col2_start_x, start_y_global=start_y
-    )
-    
-    if debug:
-        cv2.imwrite("debug_grid_overlay.png", debug_vis)
-    
-    all_answers = answers_part1 + answers_part2
-    answers_dict = {i: ans for i, ans in enumerate(all_answers, start=1)}
-    
-    # --- PRINT FULL REPORT UNTUK CROSSCHECK ---
-    print(f"\n{'='*40}")
-    print(f"REKAP HASIL DETEKSI (RAW)")
-    print(f"{'='*40}")
-    print(f"{'No':<5} | {'Jawaban Deteksi'}")
-    print(f"{'-'*25}")
-    
-    for i in range(1, 31):
-        ans = answers_dict.get(i)
-        if ans == "DOUBLE":
-            display_ans = "⚠️ [DOUBLE BUBBLE]"
-        elif ans is not None:
-            display_ans = ans
+    for q_idx in range(n_questions):
+        yt = y_cuts[q_idx]
+        yb = y_cuts[q_idx + 1]
+
+        # Score each of 5 options
+        scores = []
+        for (xs_r, xe_r) in OPTION_BOUNDS:
+            xt = int(col_w * xs_r)
+            xb = int(col_w * xe_r)
+            inset = 4  # Avoid cell borders
+            cell = roi[yt + inset: yb - inset, xt + inset: xb - inset]
+            scores.append(_score_bubble(cell))
+
+        max_score = max(scores) if scores else 0
+        min_score = min(scores) if scores else 0
+        mean_score = np.mean(scores)
+        std_score = np.std(scores)
+
+        # ── Decision: Z-score based (robust against shadows) ───
+        # Instead of ratio to median (fails with shadow gradient),
+        # use statistical outlier detection:
+        #   - If a score is > mean + Z_THRESH × stdev, it's an outlier = filled
+        #   - This works because in a row with 1 filled + 4 empty,
+        #     the filled one is a clear statistical outlier
+        #   - Shadows inflate ALL scores equally per row, so the
+        #     relative difference (z-score) remains stable
+        #
+        # Z_THRESH=1.0: filled bubbles typically 1.2-2.5 stdev above mean
+        # MIN_ABS_DIFF: absolute score gap to avoid noise triggers
+        Z_THRESH = 1.0
+        MIN_ABS_DIFF = 5.0
+
+        if std_score < 2.0:
+            # Very uniform scores = all empty (no filled bubble)
+            filled = []
         else:
-            display_ans = "[KOSONG]"
-        print(f"Q{i:<4} | {display_ans}")
-        
-    print(f"{'='*40}\n")
+            threshold = mean_score + Z_THRESH * std_score
+            filled = [
+                i for i, s in enumerate(scores)
+                if s >= threshold and (s - mean_score) >= MIN_ABS_DIFF
+            ]
+
+        if len(filled) == 0:
+            answer = None
+        elif len(filled) == 1:
+            answer = OPTIONS[filled[0]]
+        else:
+            # Multiple filled — check if truly double or just one dominant
+            top_idx = scores.index(max_score)
+            scores_sorted = sorted(scores)
+            second_max = scores_sorted[-2]
+
+            # Genuine double: runner-up ≥ 85% of winner AND both above threshold
+            if max_score > 0 and second_max >= max_score * 0.85:
+                answer = "DOUBLE"
+            else:
+                answer = OPTIONS[top_idx]
+
+        answers.append(answer)
+
+        # ── Debug overlay ───────────────────────────────────────
+        if debug_img is not None:
+            for opt_idx, (xs_r, xe_r) in enumerate(OPTION_BOUNDS):
+                gx1 = x_start + int(col_w * xs_r) + 4
+                gx2 = x_start + int(col_w * xe_r) - 4
+                gy1 = y_start + yt + 4
+                gy2 = y_start + yb - 4
+                
+                # Pick color
+                if answer == "DOUBLE" and opt_idx in filled:
+                    color = (0, 0, 255) # Red for double
+                elif answer == OPTIONS[opt_idx]:
+                    color = (0, 255, 0) # Green for chosen
+                else:
+                    color = (255, 255, 0) # Cyan for scanned options
+
+                cv2.rectangle(debug_img, (gx1, gy1), (gx2, gy2), color, 1)
+
+                # Overlay score value
+                score_str = f"{scores[opt_idx]:.0f}"
+                cv2.putText(debug_img, score_str, (gx1 + 2, gy2 - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+
+    return answers
+
+
+def detect_answers(warped_ready, num_questions=30, debug=False):
+    """
+    Read bubbles arranged in 2 columns (15 questions each).
     
-    return answers_dict
-
+    Parameters
+    ----------
+    warped_ready : grayscale image from preprocess_for_answers()
+    num_questions: Total number of questions expected (max 30)
+    
+    Returns
+    -------
+    dict: { 1: 'A', 2: 'C', 3: None, 4: 'DOUBLE', ... }
+    """
+    h, w = warped_ready.shape[:2]
+    
+    if debug:
+        # Create a BGR copy for colored overlay
+        debug_img = cv2.cvtColor(warped_ready, cv2.COLOR_GRAY2BGR)
+        print(f"[detect_answers] Canvas: {w}x{h}  Questions: {num_questions}")
+    else:
+        debug_img = None
+
+    # Geometry relative to 1000x1414 canonical canvas
+    y_start = int(h * 0.222)
+    y_end   = int(h * 0.975)
+
+    c1_xs = int(w * 0.090)
+    c1_xe = int(w * 0.350)
+
+    c2_xs = int(w * 0.590)
+    c2_xe = int(w * 0.855)
+
+    all_answers = {}
+    
+    # Process Column 1
+    q_col1 = min(num_questions, 15)
+    col1_ans = _read_column(warped_ready, c1_xs, c1_xe, y_start, y_end, q_col1, debug_img)
+    for i, a in enumerate(col1_ans):
+        all_answers[i + 1] = a
+
+    # Process Column 2
+    if num_questions > 15:
+        q_col2 = min(num_questions - 15, 15)
+        col2_ans = _read_column(warped_ready, c2_xs, c2_xe, y_start, y_end, q_col2, debug_img)
+        for i, a in enumerate(col2_ans):
+            all_answers[15 + i + 1] = a
+
+    if debug:
+        cv2.imwrite("debug_grid_overlay.png", debug_img)
+        print("[detect_answers] Saved: debug_grid_overlay.png")
+
+        # Basic text log
+        print("\n=============================================")
+        print("  REKAP HASIL DETEKSI")
+        print("=============================================")
+        print("  No    | Jawaban")
+        print("  -------------------------")
+        for i in range(1, num_questions + 1):
+            val = all_answers.get(i)
+            if val == "DOUBLE":
+                print(f"  Q{i:<4} | [DOUBLE BUBBLE]")
+            elif val is None:
+                print(f"  Q{i:<4} | [KOSONG]")
+            else:
+                print(f"  Q{i:<4} | {val}")
+        print("=============================================\n")
+
+    return all_answers

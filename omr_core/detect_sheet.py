@@ -1,183 +1,255 @@
+"""
+detect_sheet.py — Robust corner marker detection & perspective warp (v3-robust)
+================================================================================
+
+Detects 4 corner markers (black squares) on the LJK sheet and performs
+perspective correction to a canonical 1000×1414 canvas.
+
+Key improvements over v2:
+- Returns (warped_image, M_warp) tuple so caller can warp original grayscale
+- Solidity filter rejects non-solid contours (shadows, hand outlines)  
+- Multi-scale area filtering for different photo distances
+- Relaxed edge margin for tilted/cropped photos
+"""
+
 import cv2
 import numpy as np
 
+
 def order_points(pts):
     """
-    Mengurutkan titik agar selalu: TL, TR, BR, BL
+    Order 4 points as: TL, TR, BR, BL
     """
     rect = np.zeros((4, 2), dtype="float32")
-    
-    # Top-Left (Jumlah x+y terkecil)
     s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]
-    
-    # Bottom-Right (Jumlah x+y terbesar)
-    rect[2] = pts[np.argmax(s)]
-    
-    # Top-Right (Selisih y-x terkecil) & Bottom-Left (Selisih y-x terbesar)
+    rect[0] = pts[np.argmin(s)]   # TL: smallest x+y
+    rect[2] = pts[np.argmax(s)]   # BR: largest x+y
     diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
-    
+    rect[1] = pts[np.argmin(diff)]  # TR: smallest y-x
+    rect[3] = pts[np.argmax(diff)]  # BL: largest y-x
     return rect
+
 
 def is_near_edge(x, y, w, h, img_w, img_h, margin=0.25):
     """
-    Cek apakah titik (x,y) dekat dengan tepi gambar.
-    margin: persentase jarak dari tepi (0.25 = 25% dari lebar/tinggi)
-    Diperlonggar dari 0.15 biar toleran terhadap foto miring.
+    Check if bounding box is near an image edge (corner region).
+    margin: fraction of image dimension to define "near edge".
+    Must be near 2 edges simultaneously (i.e., in a corner).
     """
     edge_margin_w = img_w * margin
     edge_margin_h = img_h * margin
-    
-    # Cek apakah kotak dekat tepi kiri, kanan, atas, atau bawah
-    near_left = x < edge_margin_w
-    near_right = (x + w) > (img_w - edge_margin_w)
-    near_top = y < edge_margin_h
+
+    near_left   = x < edge_margin_w
+    near_right  = (x + w) > (img_w - edge_margin_w)
+    near_top    = y < edge_margin_h
     near_bottom = (y + h) > (img_h - edge_margin_h)
-    
-    # Marker harus di sudut, jadi harus dekat dengan 2 sisi sekaligus
+
     return (near_left or near_right) and (near_top or near_bottom)
 
+
 def find_paper(thresh, debug_image=None):
-    # 1. PADDING (Tetap dipakai biar aman dari border)
+    """
+    Find 4 corner markers in a binary image and compute perspective warp.
+
+    Parameters
+    ----------
+    thresh      : binary image (white = foreground) from preprocess_for_markers()
+    debug_image : optional BGR image for debug visualization
+
+    Returns
+    -------
+    (warped, M_warp) : tuple of (warped binary image, 3x3 perspective matrix)
+    None             : if markers not found in all 4 corners
+    """
+    # 1. PADDING — prevent markers touching image border from being lost
     padding = 20
-    padded_thresh = cv2.copyMakeBorder(thresh, padding, padding, padding, padding, cv2.BORDER_CONSTANT, value=0)
-    
+    padded_thresh = cv2.copyMakeBorder(
+        thresh, padding, padding, padding, padding,
+        cv2.BORDER_CONSTANT, value=0
+    )
+
     if debug_image is not None:
-        padded_debug = cv2.copyMakeBorder(debug_image, padding, padding, padding, padding, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-    
-    # 2. CARI KONTUR - GUNAKAN RETR_EXTERNAL untuk hindari nested contours
-    contours, _ = cv2.findContours(padded_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+        padded_debug = cv2.copyMakeBorder(
+            debug_image, padding, padding, padding, padding,
+            cv2.BORDER_CONSTANT, value=[255, 255, 255]
+        )
+
+    # 2. Find contours
+    # RETR_LIST (not RETR_EXTERNAL) — finds ALL contours, including ones
+    # nested inside larger shapes (e.g., marker square inside hand shadow)
+    contours, _ = cv2.findContours(
+        padded_thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
+    )
+
     h_img, w_img = padded_thresh.shape[:2]
-    
-    # Titik tengah gambar untuk membagi kuadran
     mid_x = w_img // 2
     mid_y = h_img // 2
-    
-    # Variabel penampung marker terbaik per kuadran
-    quadrants = {
-        "TL": None,  # Top-Left
-        "TR": None,  # Top-Right
-        "BL": None,  # Bottom-Left
-        "BR": None   # Bottom-Right
-    }
+
+    # Quadrant-based marker storage (lists of candidates)
+    quadrants = {"TL": [], "TR": [], "BL": [], "BR": []}
 
     print(f"\n--- SCANNING ZONES (Image: {w_img}x{h_img}) ---")
     print(f"Total contours found: {len(contours)}")
-
     candidate_count = 0
-    
+
+    # Image area for relative size filtering
+    img_area = h_img * w_img
+
     for c in contours:
         area = cv2.contourArea(c)
-        
-        # Filter Luas - DIPERLONGGAR:
-        # Min: 80 (turun dari 150, biar marker kecil di foto jauh masih kedetect)
-        # Max: Naikkan ke 0.35 untuk toleransi marker lebih besar
-        if area < 80 or area > (h_img * w_img * 0.35): 
-            continue
-        
-        peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.05 * peri, True)  # 0.04 → 0.05 (lebih toleran bentuk)
-        
-        # Harus Kotak (3-8 sudut toleransi, diperlonggar dari 4-6)
-        if 3 <= len(approx) <= 8:
-            x, y, w, h = cv2.boundingRect(approx)
-            aspect_ratio = w / float(h)
-            
-            # Filter Rasio Kotak - DIPERLONGGAR: 0.4-2.5 (biar toleran perspektif miring)
-            if 0.4 <= aspect_ratio <= 2.5:
-                # CEK PROXIMITY KE TEPI - INI YANG PENTING!
-                if not is_near_edge(x, y, w, h, w_img, h_img):
-                    continue  # Skip jika tidak di sudut
-                
-                # Hitung Titik Pusat Kontur
-                M = cv2.moments(c)
-                if M["m00"] == 0: continue
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                
-                # Tentukan kuadran
-                zone = ""
-                if cx < mid_x and cy < mid_y: 
-                    zone = "TL"
-                elif cx >= mid_x and cy < mid_y: 
-                    zone = "TR"
-                elif cx < mid_x and cy >= mid_y: 
-                    zone = "BL"
-                elif cx >= mid_x and cy >= mid_y: 
-                    zone = "BR"
-                
-                candidate_count += 1
-                print(f"  Candidate {candidate_count}: Zone={zone}, Area={area:.0f}, Aspect={aspect_ratio:.2f}, Pos=({x},{y})")
-                
-                # Cek apakah ini kandidat terbaik (terbesar) di zonanya
-                if quadrants[zone] is None or area > quadrants[zone][1]:
-                    quadrants[zone] = [approx, area]
-                    
-                    # Visualisasi kandidat sementara (Kuning Tipis)
-                    if debug_image is not None:
-                        cv2.drawContours(padded_debug, [approx], -1, (0, 255, 255), 2)
 
-    # 3. VERIFIKASI HASIL
+        # --- AREA FILTER ---
+        # Min: 50px (catch small markers in high-res photos)
+        # Max: 3.5% of image (generous for close-up photos)
+        if area < 50 or area > (img_area * 0.035):
+            continue
+
+        # --- SHAPE FILTER (polygon approximation) ---
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.05 * peri, True)
+
+        if not (3 <= len(approx) <= 8):
+            continue
+
+        x, y, w, h = cv2.boundingRect(approx)
+        if h == 0 or w == 0:
+            continue
+        aspect_ratio = w / float(h)
+
+        # Aspect ratio: markers are roughly square (0.4 – 2.5 for perspective distortion)
+        if not (0.4 <= aspect_ratio <= 2.5):
+            continue
+
+        # --- SOLIDITY FILTER (KEY ROBUSTNESS IMPROVEMENT) ---
+        # Solidity = contour_area / convex_hull_area
+        # Solid squares: solidity ≈ 0.85–1.0
+        # Shadows, fingers, text: solidity < 0.6 (irregular shapes)
+        hull = cv2.convexHull(c)
+        hull_area = cv2.contourArea(hull)
+        if hull_area == 0:
+            continue
+        solidity = area / hull_area
+
+        if solidity < 0.7:
+            continue  # Reject non-solid shapes (shadows, hand outlines)
+
+        # --- EDGE PROXIMITY FILTER ---
+        if not is_near_edge(x, y, w, h, w_img, h_img, margin=0.28):
+            continue  # Must be in a corner region
+
+        # --- DETERMINE QUADRANT ---
+        M = cv2.moments(c)
+        if M["m00"] == 0:
+            continue
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
+
+        zone = ""
+        if cx < mid_x and cy < mid_y:
+            zone = "TL"
+        elif cx >= mid_x and cy < mid_y:
+            zone = "TR"
+        elif cx < mid_x and cy >= mid_y:
+            zone = "BL"
+        elif cx >= mid_x and cy >= mid_y:
+            zone = "BR"
+
+        candidate_count += 1
+        print(f"  Candidate {candidate_count}: Zone={zone}, Area={area:.0f}, "
+              f"AR={aspect_ratio:.2f}, Solidity={solidity:.2f}, Pos=({x},{y})")
+
+        quadrants[zone].append({"approx": approx, "area": area, "cx": cx, "cy": cy, "bbox": (x, y, w, h)})
+
+        if debug_image is not None:
+            cv2.drawContours(padded_debug, [approx], -1, (0, 255, 255), 2)
+
+    # 3. VERIFY & SELECT BEST COMBINATION — need all 4 zones
     final_markers = []
     missing_zones = []
-    
+
     for zone in ["TL", "TR", "BR", "BL"]:
-        if quadrants[zone] is not None:
-            final_markers.append(quadrants[zone][0])
-            # Visualisasi Final (Hijau Tebal) + Label Zona
-            if debug_image is not None:
-                approx = quadrants[zone][0]
-                cv2.drawContours(padded_debug, [approx], -1, (0, 255, 0), 4)
-                
-                # Ambil koordinat untuk label text
-                x, y, w, h = cv2.boundingRect(approx)
-                cv2.putText(padded_debug, zone, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                
-                # Tambahkan info area
-                area_text = f"{quadrants[zone][1]:.0f}px"
-                cv2.putText(padded_debug, area_text, (x, y+h+20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-        else:
+        if len(quadrants[zone]) == 0:
             missing_zones.append(zone)
+        else:
+            # Sort by area descending and keep top 5 candidates
+            quadrants[zone] = sorted(quadrants[zone], key=lambda c: c["area"], reverse=True)[:5]
+
+    if len(missing_zones) == 0:
+        valid_combos = []
+
+        # Find all valid geometric combinations with similar areas
+        for tl in quadrants["TL"]:
+            for tr in quadrants["TR"]:
+                for bl in quadrants["BL"]:
+                    for br in quadrants["BR"]:
+                        # 1. Geometric validity check (TL left of TR, TL above BL, etc)
+                        if tl["cx"] >= tr["cx"] or bl["cx"] >= br["cx"]: continue
+                        if tl["cy"] >= bl["cy"] or tr["cy"] >= br["cy"]: continue
+
+                        # 2. Area consistency check (markers should be similar in size)
+                        areas = [tl["area"], tr["area"], bl["area"], br["area"]]
+                        area_ratio = max(areas) / min(areas)
+
+                        if area_ratio <= 1.5:
+                            valid_combos.append({
+                                "combo": {"TL": tl, "TR": tr, "BL": bl, "BR": br},
+                                "avg_area": sum(areas)/4
+                            })
+
+        if len(valid_combos) > 0:
+            # Out of all valid combinations (which could include tiny perfectly matched bubbles),
+            # the true markers are the combination with the LARGEST marker area
+            best_match = max(valid_combos, key=lambda x: x["avg_area"])
+            
+            for zone in ["TL", "TR", "BR", "BL"]:
+                cand = best_match["combo"][zone]
+                final_markers.append(cand["approx"])
+                
+                if debug_image is not None:
+                    cv2.drawContours(padded_debug, [cand["approx"]], -1, (0, 255, 0), 4)
+                    x, y, w, h = cand["bbox"]
+                    cv2.putText(padded_debug, zone, (x, y - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                    cv2.putText(padded_debug, f"{cand['area']:.0f}px", (x, y + h + 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+        else:
+            missing_zones = ["Valid Marker Combo (Area/Geometry Mismatch)"]
 
     if len(missing_zones) > 0:
         print(f"\n❌ GAGAL: Marker tidak ditemukan di zona: {missing_zones}")
-        print(f"   Total kandidat ditemukan: {candidate_count}")
+        print(f"   Total kandidat: {candidate_count}")
         print(f"   Saran:")
         print(f"   - Cek apakah marker memang ada di keempat sudut gambar")
         print(f"   - Pastikan marker cukup kontras (hitam pada putih)")
-        print(f"   - Coba sesuaikan threshold preprocessing")
-        
-        # Kembalikan gambar asli tanpa padding jika debug tersedia
+        print(f"   - Mungkin ada shadow/noise yang menutupi marker")
+
         if debug_image is not None:
             debug_image[:] = padded_debug[padding:-padding, padding:-padding]
         return None
 
     print(f"\n✅ SUKSES: 4 Marker Zona Ditemukan!")
 
-    # 4. KEMBALIKAN GAMBAR DEBUG
+    # 4. Update debug image
     if debug_image is not None:
         debug_image[:] = padded_debug[padding:-padding, padding:-padding]
 
-    # 5. PROSES WARPING
+    # 5. COMPUTE PERSPECTIVE WARP
     centers = []
     for m in final_markers:
         M = cv2.moments(m)
         centers.append((int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"])))
 
     rect_pts = np.array(centers, dtype="float32")
-    rect_pts -= padding  # Hapus efek padding
-    
+    rect_pts -= padding  # Remove padding offset
+
     rect = order_points(rect_pts)
 
-    # Output A4 Size
+    # Output: canonical A4-ish canvas
     dst = np.array([
         [0, 0], [1000, 0], [1000, 1414], [0, 1414]
     ], dtype="float32")
 
-    M = cv2.getPerspectiveTransform(rect, dst)
-    warped = cv2.warpPerspective(thresh, M, (1000, 1414))
+    M_warp = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(thresh, M_warp, (1000, 1414))
 
-    return warped
+    return (warped, M_warp)
