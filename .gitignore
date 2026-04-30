@@ -28,6 +28,8 @@ test_*.png
 roi_calibration.png
 debug_*.jpg
 test_*.jpg
+benchmark_output/
+debug_output/
 
 # OMR Result files
 result.json

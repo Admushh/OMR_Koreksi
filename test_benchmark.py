@@ -28,7 +28,7 @@ EXPECTED_ANSWERS = {
         21:'D', 22:'E', 23:'A', 24:'C', 25:'B',
         26:'D', 27:'B', 28:'D', 29:'A', 30:'E',
     },
-    "sample 2.png": {
+    "sample.png": {
         1:'A', 2:'B', 3:'C', 4:'D', 5:'E',
         6:'A', 7:'B', 8:'C', 9:'D', 10:'E',
         11:'A', 12:'B', 13:'C', 14:'D', 15:'E',
@@ -40,7 +40,7 @@ EXPECTED_ANSWERS = {
 
 TEST_FILES = [
     ("Kunjab.jpg",    "Clean scan (kondisi ideal)"),
-    ("sample 2.png",  "Noisy (shadow tangan + tulisan tangan + miring ringan)"),
+    ("sample.png",  "Noisy (shadow tangan + tulisan tangan + miring ringan)"),
 ]
 
 OUTPUT_DIR = "benchmark_output"

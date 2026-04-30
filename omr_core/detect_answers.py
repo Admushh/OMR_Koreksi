@@ -72,7 +72,7 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
         for (xs_r, xe_r) in OPTION_BOUNDS:
             xt = int(col_w * xs_r)
             xb = int(col_w * xe_r)
-            inset = 4  # Avoid cell borders
+            inset = 8  # Avoid cell borders
             cell = roi[yt + inset: yb - inset, xt + inset: xb - inset]
             scores.append(_score_bubble(cell))
 
@@ -179,7 +179,7 @@ def detect_answers(warped_ready, num_questions=30, debug=False):
     c1_xe = int(w * 0.350)
 
     c2_xs = int(w * 0.590)
-    c2_xe = int(w * 0.855)
+    c2_xe = int(w * 0.845)
 
     all_answers = {}
     

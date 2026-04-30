@@ -1,11 +1,11 @@
 {
   "Kunjab.jpg": {
     "timings": {
-      "preprocess_markers": 19.4,
-      "find_paper": 23.0,
-      "warp_gray": 4.1,
-      "preprocess_answers": 2.1,
-      "detect_answers": 49.2
+      "preprocess_markers": 69.3,
+      "find_paper": 24.5,
+      "warp_gray": 4.8,
+      "preprocess_answers": 56.3,
+      "detect_answers": 58.9
     },
     "accuracy": {
       "correct": 30,
@@ -51,43 +51,22 @@
     "errors": [],
     "used_padding": false
   },
-  "sample 2.png": {
+  "sample.png": {
     "timings": {
-      "preprocess_markers": 7.3,
-      "find_paper": 19.6,
-      "warp_gray": 3.3,
-      "preprocess_answers": 2.4,
-      "detect_answers": 58.1
+      "preprocess_markers": 40.7,
+      "find_paper": 19.5,
+      "warp_gray": 4.0,
+      "preprocess_answers": 51.5,
+      "detect_answers": 77.3
     },
     "accuracy": {
-      "correct": 26,
-      "wrong": 4,
+      "correct": 30,
+      "wrong": 0,
       "empty": 0,
       "double": 0,
       "total": 30,
-      "pct": 86.7,
-      "problems": [
-        [
-          26,
-          "E",
-          "A"
-        ],
-        [
-          27,
-          "E",
-          "B"
-        ],
-        [
-          28,
-          "E",
-          "C"
-        ],
-        [
-          29,
-          "E",
-          "D"
-        ]
-      ]
+      "pct": 100.0,
+      "problems": []
     },
     "detected_answers": {
       "1": "A",
@@ -115,10 +94,10 @@
       "23": "C",
       "24": "D",
       "25": "E",
-      "26": "E",
-      "27": "E",
-      "28": "E",
-      "29": "E",
+      "26": "A",
+      "27": "B",
+      "28": "C",
+      "29": "D",
       "30": "E"
     },
     "errors": [],

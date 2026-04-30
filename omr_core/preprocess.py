@@ -17,17 +17,6 @@ import numpy as np
 # ═══════════════════════════════════════════════════════════════
 
 def preprocess_for_markers(image):
-    """
-    Preprocess for corner marker detection.
-    
-    Strategy:
-    - CLAHE to normalize uneven lighting (shadows, hand noise)
-    - Otsu threshold for robust binarization
-    - Morphological cleaning WITHOUT masking corners
-    - NO line removal (irrelevant for markers, risks damaging them)
-    
-    Returns: binary image (white = foreground/ink)
-    """
     # 1. Grayscale
     if len(image.shape) == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -35,18 +24,20 @@ def preprocess_for_markers(image):
         gray = image.copy()
 
     # 2. CLAHE — normalize lighting across the image
-    #    clipLimit=2.0 handles shadows (like hand in sample 2.png)
-    #    better than 1.2 which is too gentle
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
 
     # 3. Gaussian Blur — reduce paper texture noise
     blur = cv2.GaussianBlur(enhanced, (5, 5), 0)
 
-    # 4. Otsu Threshold — auto-picks optimal threshold
-    _, thresh = cv2.threshold(
-        blur, 0, 255,
-        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+# 4. Adaptive Thresholding — kebal terhadap bayangan (shadow)
+    thresh = cv2.adaptiveThreshold(
+        blur, 
+        255, 
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY_INV, 
+        75,  
+        15   
     )
 
     # 5. Morphological Open — remove small noise specks
@@ -65,29 +56,39 @@ def preprocess_for_markers(image):
 #          darker than empty bubbles
 # ═══════════════════════════════════════════════════════════════
 
+
 def preprocess_for_answers(warped_gray):
     """
     Preprocess a warped grayscale image for bubble detection.
-    
-    Input:  grayscale image (already perspective-corrected to 1000x1414)
-    Output: enhanced grayscale image (NOT binary)
-    
-    Why grayscale instead of binary?
-    - Binary loses intensity information
-    - Filled bubble (dark pencil) vs empty bubble (thin border) contrast
-      is best measured by mean pixel intensity, not pixel count
-    - Otsu on warped image often over-thresholds, making empty bubble
-      borders look "filled"
+    Menggunakan teknik Background Subtraction untuk menghilangkan bayangan ekstrem.
     """
     if len(warped_gray.shape) == 3:
         warped_gray = cv2.cvtColor(warped_gray, cv2.COLOR_BGR2GRAY)
 
-    # 1. CLAHE — enhanced local contrast
-    #    Higher tileGrid for more localized normalization on warped canvas
-    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(12, 12))
-    enhanced = clahe.apply(warped_gray)
+    # 1. ESTIMASI BACKGROUND (Menangkap Pola Bayangan)
+    # Kita pakai kernel lingkaran berukuran 35x35 (harus lebih besar dari ukuran 1 buletan LJK)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (35, 35))
+    
+    # DILATE: Algoritma ini akan "menelan" semua objek gelap (tinta/pensil),
+    # sehingga yang tersisa HANYA warna dasar kertas beserta gradasi bayangannya.
+    background = cv2.morphologyEx(warped_gray, cv2.MORPH_DILATE, kernel)
+    
+    # Blur sedikit agar transisi bayangannya mulus
+    background = cv2.medianBlur(background, 21)
 
-    # 2. Light blur to smooth pencil texture  
+    # 2. HAPUS BAYANGAN (Subtraksi)
+    # Gambar background dikurangi gambar asli. 
+    # Area bayangan (gelap - gelap) jadi 0 (hitam). Area arsiran (terang - gelap) jadi punya nilai.
+    # Terakhir kita Invert (255 - hasil) supaya warna kertas balik jadi putih (255).
+    normalized = 255 - cv2.absdiff(background, warped_gray)
+
+    # 3. PERTAJAM ARSIRAN (CLAHE)
+    # Karena bayangan ekstrem udah hilang, CLAHE sekarang bisa fokus 
+    # murni mempertajam arsiran pensil vs kertas putih.
+    clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8, 8))
+    enhanced = clahe.apply(normalized)
+
+    # 4. Light blur untuk menghaluskan noise kertas
     enhanced = cv2.GaussianBlur(enhanced, (3, 3), 0)
 
     return enhanced
