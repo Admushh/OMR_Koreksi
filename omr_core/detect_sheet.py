@@ -88,8 +88,6 @@ def find_paper(thresh, debug_image=None):
     # Quadrant-based marker storage (lists of candidates)
     quadrants = {"TL": [], "TR": [], "BL": [], "BR": []}
 
-    print(f"\n--- SCANNING ZONES (Image: {w_img}x{h_img}) ---")
-    print(f"Total contours found: {len(contours)}")
     candidate_count = 0
 
     # Image area for relative size filtering
@@ -120,10 +118,6 @@ def find_paper(thresh, debug_image=None):
         if not (0.4 <= aspect_ratio <= 2.5):
             continue
 
-        # --- SOLIDITY FILTER (KEY ROBUSTNESS IMPROVEMENT) ---
-        # Solidity = contour_area / convex_hull_area
-        # Solid squares: solidity ≈ 0.85–1.0
-        # Shadows, fingers, text: solidity < 0.6 (irregular shapes)
         hull = cv2.convexHull(c)
         hull_area = cv2.contourArea(hull)
         if hull_area == 0:

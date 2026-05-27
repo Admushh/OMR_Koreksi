@@ -1,0 +1,59 @@
+# Version control
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+omr_core/__pycache__
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Debug & test images
+debug_*.png
+debug_*.jpg
+test_*.png
+test_*.jpg
+benchmark_output/
+debug_output/
+*.jpg
+*.png
+*.docx
+*.xlsx
+
+# Result files
+result.json
+test_result.json
+batch_results.json
+
+# Executables (not needed inside container)
+cloudflared.exe
+*.exe
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Diagnostic / utility scripts
+_diag_*.py
+diag_*.py
+debug_*.py
+generate_*.py
+quick_test.py
+test_benchmark.py
+test_preprocess*.py

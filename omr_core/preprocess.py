@@ -82,9 +82,7 @@ def preprocess_for_answers(warped_gray):
     # Terakhir kita Invert (255 - hasil) supaya warna kertas balik jadi putih (255).
     normalized = 255 - cv2.absdiff(background, warped_gray)
 
-    # 3. PERTAJAM ARSIRAN (CLAHE)
-    # Karena bayangan ekstrem udah hilang, CLAHE sekarang bisa fokus 
-    # murni mempertajam arsiran pensil vs kertas putih.
+    # (CLAHE)
     clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8, 8))
     enhanced = clahe.apply(normalized)
 

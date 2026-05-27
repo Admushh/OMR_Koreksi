@@ -1,0 +1,31 @@
+services:
+  # ── FastAPI Backend ────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omr-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist answer_key.json across container restarts
+      - ./answer_key.json:/app/answer_key.json
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Cloudflare Tunnel (exposes API to the internet) ───────
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: omr-tunnel
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    command: tunnel --no-autoupdate --url http://api:8000

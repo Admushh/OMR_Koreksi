@@ -22,14 +22,32 @@ ENV/
 *.swo
 *~
 
-# OMR Debug files
+# OMR Debug / pipeline output images
 debug_*.png
-test_*.png
-roi_calibration.png
 debug_*.jpg
+test_*.png
 test_*.jpg
+roi_calibration.png
 benchmark_output/
 debug_output/
+
+# Numbered pipeline step images (01_original_image.jpg, etc.)
+[0-9][0-9]_*.jpg
+[0-9][0-9]_*.png
+[0-9][0-9][a-z]_*.jpg
+[0-9][0-9][a-z]_*.png
+
+# Skripsi / result screenshots
+hasil_*.jpg
+hasil_*.png
+
+# Sample / test input images
+sample.png
+sample.jpg
+Kunjab.jpg
+
+# LJK template document
+LJK_*.docx
 
 # OMR Result files
 result.json
