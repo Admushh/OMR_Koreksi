@@ -1,5 +1,3 @@
-
-
 import cv2
 import numpy as np
 
@@ -69,8 +67,8 @@ def find_paper(thresh, debug_image=None):
         area = cv2.contourArea(c)
 
         # --- AREA FILTER ---
-        
-
+        # Min: 50px (catch small markers in high-res photos)
+        # Max: 3.5% of image (generous for close-up photos)
         if area < 50 or area > (img_area * 0.035):
             continue
 
@@ -86,7 +84,7 @@ def find_paper(thresh, debug_image=None):
             continue
         aspect_ratio = w / float(h)
 
-        
+        # Aspect ratio: markers are roughly square (0.4 – 2.5 for perspective distortion)
         if not (0.4 <= aspect_ratio <= 2.5):
             continue
 
@@ -194,9 +192,11 @@ def find_paper(thresh, debug_image=None):
 
     print(f"\n SUKSES: 4 Marker Zona Ditemukan!")
 
+    # 4. Update debug image
     if debug_image is not None:
         debug_image[:] = padded_debug[padding:-padding, padding:-padding]
 
+    # 5. COMPUTE PERSPECTIVE WARP
     centers = []
     for m in final_markers:
         M = cv2.moments(m)
@@ -207,6 +207,7 @@ def find_paper(thresh, debug_image=None):
 
     rect = order_points(rect_pts)
 
+    # Output: canonical A4-ish canvas
     dst = np.array([
         [0, 0], [1000, 0], [1000, 1414], [0, 1414]
     ], dtype="float32")

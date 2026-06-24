@@ -85,6 +85,46 @@ def remove_grid_lines(crop_img):
     return padded
 
 
+def map_lookalike_letters(text: str) -> str:
+    """
+    Map common handwritten digit misrecognitions to their alphabetical equivalents.
+    For example: '1' -> 'I', '5' -> 'S', '0' -> 'O', etc.
+    """
+    mapping = {
+        '1': 'I',
+        '2': 'Z',
+        '3': 'E',
+        '4': 'A',
+        '5': 'S',
+        '6': 'G',
+        '7': 'T',
+        '8': 'B',
+        '9': 'G',
+        '0': 'O'
+    }
+    return "".join(mapping.get(char, char) for char in text)
+
+
+def map_lookalike_digits(text: str) -> str:
+    """
+    Map common handwritten letter misrecognitions to their numeric equivalents.
+    For example: 'i'/'I'/'l' -> '1', 'g'/'q' -> '9', 'S'/'s' -> '5', etc.
+    """
+    mapping = {
+        'i': '1', 'I': '1', 'l': '1', 'L': '1', '|': '1',
+        'z': '2', 'Z': '2',
+        'e': '3', 'E': '3',
+        'A': '4',
+        's': '5', 'S': '5',
+        'b': '6', 'G': '6',
+        't': '7', 'T': '7',
+        'B': '8',
+        'g': '9', 'q': '9',
+        'O': '0', 'o': '0', 'D': '0'
+    }
+    return "".join(mapping.get(char, char) for char in text)
+
+
 def extract_name_and_id(warped_gray):
     """
     Extract Name and ID (Nomor Induk) text from the warped grayscale sheet image.
@@ -116,7 +156,13 @@ def extract_name_and_id(warped_gray):
     try:
         name_res = engine.ocr(name_bgr)
         if name_res and name_res[0]:
-            name_text = " ".join(name_res[0].get('rec_texts', [])).strip().upper()
+            raw_name = " ".join(name_res[0].get('rec_texts', [])).strip().upper()
+            # Map lookalike numbers to letters (e.g. '1' -> 'I', '5' -> 'S')
+            mapped_name = map_lookalike_letters(raw_name)
+            # Clean: keep only letters and spaces
+            name_text = "".join([c for c in mapped_name if c.isalpha() or c.isspace()]).strip()
+            # Normalize spaces (collapse multiple spaces to single space)
+            name_text = " ".join(name_text.split())
     except Exception as e:
         print(f"[OCR] Error scanning name: {e}")
 
@@ -126,8 +172,10 @@ def extract_name_and_id(warped_gray):
         id_res = engine.ocr(id_bgr)
         if id_res and id_res[0]:
             raw_id = "".join(id_res[0].get('rec_texts', [])).strip()
+            # Map lookalike characters to digits (e.g. 'i'/'I' -> '1', 'g' -> '9')
+            mapped_id = map_lookalike_digits(raw_id)
             # Clean: keep only digits
-            id_text = "".join([c for c in raw_id if c.isdigit()])
+            id_text = "".join([c for c in mapped_id if c.isdigit()])
     except Exception as e:
         print(f"[OCR] Error scanning ID: {e}")
 
