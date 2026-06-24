@@ -78,29 +78,26 @@ def process_full_debug(image):
         # TAHAP EXTRA UNTUK SKRIPSI: EKSTRAKSI GAMBAR ROI MURNI
         # =========================================================
         # Ambil sampel Baris Pertama (Soal No 1) untuk diekstrak ROI-nya
-        h, w = warped_ready.shape[:2]
-        y_start = int(h * 0.222)
-        y_end   = int(h * 0.975)
-        c1_xs = int(w * 0.090)
-        c1_xe = int(w * 0.350)
+        ROW_Y_CENTERS = [
+            320, 389, 459, 529, 599, 669, 739, 810, 880, 951, 1022, 1093, 1164, 1236, 1307
+        ]
+        yc = ROW_Y_CENTERS[0]
+        yt = yc - 35
+        yb = yc + 35
         
+        c1_xs = 90
+        c1_xe = 350
         col_w = c1_xe - c1_xs
-        col_h = y_end - y_start
-        roi_col = warped_ready[y_start:y_end, c1_xs:c1_xe]
-        y_cuts = np.linspace(0, col_h, 15 + 1, dtype=int)
-        
-        yt = y_cuts[0]
-        yb = y_cuts[1]
         
         OPTION_BOUNDS = [(0.00, 0.20), (0.20, 0.40), (0.40, 0.60), (0.60, 0.80), (0.80, 1.00)]
         roi_cells = []
         
         for (xs_r, xe_r) in OPTION_BOUNDS:
-            xt = int(col_w * xs_r)
-            xb = int(col_w * xe_r)
+            xt = c1_xs + int(col_w * xs_r)
+            xb = c1_xs + int(col_w * xe_r)
             inset = 8
             # Slicing murni potongan ROI
-            cell = roi_col[yt + inset: yb - inset, xt + inset: xb - inset]
+            cell = warped_ready[yt + inset: yb - inset, xt + inset: xb - inset]
             
             # Diperbesar jadi 100x100 biar gak pecah pas ditempel di Word
             if cell.size > 0:
@@ -164,7 +161,7 @@ def show_grid(steps):
 # MAIN
 # =========================
 if __name__ == "__main__":
-    img = cv2.imread("sample.png") # UBAH NAMA FILE GAMBAR LU DI SINI
+    img = cv2.imread("LJK_REVISI.png") # UBAH NAMA FILE GAMBAR LU DI SINI
     
     if img is not None:
         steps = process_full_debug(img)

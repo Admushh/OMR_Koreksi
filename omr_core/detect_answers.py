@@ -1,18 +1,3 @@
-"""
-detect_answers.py — Robust LJK Answer Detection (v3-robust)
-============================================================
-
-Detects student answers (A, B, C, D, E) from a warped, preprocessed
-grayscale image.
-
-Key improvements over v2:
-- Uses the enhanced grayscale image for scoring, NOT binary.
-- Bubble score is based on mean pixel intensity instead of positive pixel count.
-- Z-score based statistical detection instead of global absolute thresholds.
-  (This naturally adapts to local shadows or lighting gradients per row).
-- Detects multiple filled answers as "DOUBLE" if they have similar scores.
-"""
-
 import cv2
 import numpy as np
 
@@ -20,19 +5,14 @@ import numpy as np
 # Option constants
 OPTIONS = ['A', 'B', 'C', 'D', 'E']
 
+# Precise Y centers of the 15 questions in the 1000x1414 canonical canvas
+ROW_Y_CENTERS = [
+    320, 389, 459, 529, 599, 669, 739, 810, 880, 951, 1022, 1093, 1164, 1236, 1307
+]
+
 
 def _score_bubble(cell_img):
-    """
-    Score a bubble based on its darkness.
-    Input: cell image (grayscale, already cropped to the bubble area)
-    
-    Returns: float score (higher = darker/filled).
-    Formula: 255 - mean_intensity
-    
-    Why this is better than binary pixel count:
-    A lightly shaded bubble might not cross a binary threshold, but its
-    overall average intensity will still be markedly lower (darker) than a blank bubble.
-    """
+
     if cell_img.size == 0:
         return 0.0
 
@@ -48,10 +28,7 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
     Returns list of 'A'–'E', 'DOUBLE', or None per question.
     """
     col_w = x_end - x_start
-    col_h = y_end - y_start
-    roi = working_gray[y_start:y_end, x_start:x_end]
-    y_cuts = np.linspace(0, col_h, n_questions + 1, dtype=int)
-
+    
     # Standard bounds for 5 options evenly spaced
     OPTION_BOUNDS = [
         (0.00, 0.20),  # Option A
@@ -64,38 +41,28 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
     answers = []
 
     for q_idx in range(n_questions):
-        yt = y_cuts[q_idx]
-        yb = y_cuts[q_idx + 1]
+        yc = ROW_Y_CENTERS[q_idx]
+        yt = yc - 35
+        yb = yc + 35
 
         # Score each of 5 options
         scores = []
         for (xs_r, xe_r) in OPTION_BOUNDS:
-            xt = int(col_w * xs_r)
-            xb = int(col_w * xe_r)
+            xt = x_start + int(col_w * xs_r)
+            xb = x_start + int(col_w * xe_r)
             inset = 8  # Avoid cell borders
-            cell = roi[yt + inset: yb - inset, xt + inset: xb - inset]
+            cell = working_gray[yt + inset: yb - inset, xt + inset: xb - inset]
             scores.append(_score_bubble(cell))
 
         max_score = max(scores) if scores else 0
-        min_score = min(scores) if scores else 0
         mean_score = np.mean(scores)
         std_score = np.std(scores)
 
-        # ── Decision: Z-score based (robust against shadows) ───
-        # Instead of ratio to median (fails with shadow gradient),
-        # use statistical outlier detection:
-        #   - If a score is > mean + Z_THRESH × stdev, it's an outlier = filled
-        #   - This works because in a row with 1 filled + 4 empty,
-        #     the filled one is a clear statistical outlier
-        #   - Shadows inflate ALL scores equally per row, so the
-        #     relative difference (z-score) remains stable
-        #
-        # Z_THRESH=1.0: filled bubbles typically 1.2-2.5 stdev above mean
-        # MIN_ABS_DIFF: absolute score gap to avoid noise triggers
-        Z_THRESH = 1.0
-        MIN_ABS_DIFF = 5.0
+        # Tuned thresholds to avoid false positives
+        Z_THRESH = 1.5
+        MIN_ABS_DIFF = 20.0
 
-        if std_score < 2.0:
+        if std_score < 8.0:
             # Very uniform scores = all empty (no filled bubble)
             filled = []
         else:
@@ -115,7 +82,6 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
             scores_sorted = sorted(scores)
             second_max = scores_sorted[-2]
 
-            # Genuine double: runner-up ≥ 85% of winner AND both above threshold
             if max_score > 0 and second_max >= max_score * 0.85:
                 answer = "DOUBLE"
             else:
@@ -128,8 +94,8 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
             for opt_idx, (xs_r, xe_r) in enumerate(OPTION_BOUNDS):
                 gx1 = x_start + int(col_w * xs_r) + 4
                 gx2 = x_start + int(col_w * xe_r) - 4
-                gy1 = y_start + yt + 4
-                gy2 = y_start + yb - 4
+                gy1 = yt + 4
+                gy2 = yb - 4
                 
                 # Pick color
                 if answer == "DOUBLE" and opt_idx in filled:
@@ -150,18 +116,7 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
 
 
 def detect_answers(warped_ready, num_questions=30, debug=False):
-    """
-    Read bubbles arranged in 2 columns (15 questions each).
-    
-    Parameters
-    ----------
-    warped_ready : grayscale image from preprocess_for_answers()
-    num_questions: Total number of questions expected (max 30)
-    
-    Returns
-    -------
-    dict: { 1: 'A', 2: 'C', 3: None, 4: 'DOUBLE', ... }
-    """
+
     h, w = warped_ready.shape[:2]
     
     if debug:
@@ -172,14 +127,14 @@ def detect_answers(warped_ready, num_questions=30, debug=False):
         debug_img = None
 
     # Geometry relative to 1000x1414 canonical canvas
-    y_start = int(h * 0.222)
-    y_end   = int(h * 0.975)
+    y_start = 285
+    y_end   = 1342
 
-    c1_xs = int(w * 0.090)
-    c1_xe = int(w * 0.350)
+    c1_xs = int(w * 0.090)  # 90
+    c1_xe = int(w * 0.350)  # 350
 
-    c2_xs = int(w * 0.590)
-    c2_xe = int(w * 0.845)
+    c2_xs = 594
+    c2_xe = 854
 
     all_answers = {}
     

@@ -1,16 +1,4 @@
-"""
-detect_sheet.py — Robust corner marker detection & perspective warp (v3-robust)
-================================================================================
 
-Detects 4 corner markers (black squares) on the LJK sheet and performs
-perspective correction to a canonical 1000×1414 canvas.
-
-Key improvements over v2:
-- Returns (warped_image, M_warp) tuple so caller can warp original grayscale
-- Solidity filter rejects non-solid contours (shadows, hand outlines)  
-- Multi-scale area filtering for different photo distances
-- Relaxed edge margin for tilted/cropped photos
-"""
 
 import cv2
 import numpy as np
@@ -22,20 +10,16 @@ def order_points(pts):
     """
     rect = np.zeros((4, 2), dtype="float32")
     s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]   # TL: smallest x+y
-    rect[2] = pts[np.argmax(s)]   # BR: largest x+y
+    rect[0] = pts[np.argmin(s)]   
+    rect[2] = pts[np.argmax(s)]   
     diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]  # TR: smallest y-x
-    rect[3] = pts[np.argmax(diff)]  # BL: largest y-x
+    rect[1] = pts[np.argmin(diff)]  
+    rect[3] = pts[np.argmax(diff)]  
     return rect
 
 
 def is_near_edge(x, y, w, h, img_w, img_h, margin=0.25):
-    """
-    Check if bounding box is near an image edge (corner region).
-    margin: fraction of image dimension to define "near edge".
-    Must be near 2 edges simultaneously (i.e., in a corner).
-    """
+
     edge_margin_w = img_w * margin
     edge_margin_h = img_h * margin
 
@@ -48,19 +32,7 @@ def is_near_edge(x, y, w, h, img_w, img_h, margin=0.25):
 
 
 def find_paper(thresh, debug_image=None):
-    """
-    Find 4 corner markers in a binary image and compute perspective warp.
 
-    Parameters
-    ----------
-    thresh      : binary image (white = foreground) from preprocess_for_markers()
-    debug_image : optional BGR image for debug visualization
-
-    Returns
-    -------
-    (warped, M_warp) : tuple of (warped binary image, 3x3 perspective matrix)
-    None             : if markers not found in all 4 corners
-    """
     # 1. PADDING — prevent markers touching image border from being lost
     padding = 20
     padded_thresh = cv2.copyMakeBorder(
@@ -97,8 +69,8 @@ def find_paper(thresh, debug_image=None):
         area = cv2.contourArea(c)
 
         # --- AREA FILTER ---
-        # Min: 50px (catch small markers in high-res photos)
-        # Max: 3.5% of image (generous for close-up photos)
+        
+
         if area < 50 or area > (img_area * 0.035):
             continue
 
@@ -114,7 +86,7 @@ def find_paper(thresh, debug_image=None):
             continue
         aspect_ratio = w / float(h)
 
-        # Aspect ratio: markers are roughly square (0.4 – 2.5 for perspective distortion)
+        
         if not (0.4 <= aspect_ratio <= 2.5):
             continue
 
@@ -191,8 +163,7 @@ def find_paper(thresh, debug_image=None):
                             })
 
         if len(valid_combos) > 0:
-            # Out of all valid combinations (which could include tiny perfectly matched bubbles),
-            # the true markers are the combination with the LARGEST marker area
+
             best_match = max(valid_combos, key=lambda x: x["avg_area"])
             
             for zone in ["TL", "TR", "BR", "BL"]:
@@ -210,7 +181,7 @@ def find_paper(thresh, debug_image=None):
             missing_zones = ["Valid Marker Combo (Area/Geometry Mismatch)"]
 
     if len(missing_zones) > 0:
-        print(f"\n❌ GAGAL: Marker tidak ditemukan di zona: {missing_zones}")
+        print(f"\n GAGAL: Marker tidak ditemukan di zona: {missing_zones}")
         print(f"   Total kandidat: {candidate_count}")
         print(f"   Saran:")
         print(f"   - Cek apakah marker memang ada di keempat sudut gambar")
@@ -221,13 +192,11 @@ def find_paper(thresh, debug_image=None):
             debug_image[:] = padded_debug[padding:-padding, padding:-padding]
         return None
 
-    print(f"\n✅ SUKSES: 4 Marker Zona Ditemukan!")
+    print(f"\n SUKSES: 4 Marker Zona Ditemukan!")
 
-    # 4. Update debug image
     if debug_image is not None:
         debug_image[:] = padded_debug[padding:-padding, padding:-padding]
 
-    # 5. COMPUTE PERSPECTIVE WARP
     centers = []
     for m in final_markers:
         M = cv2.moments(m)
@@ -238,7 +207,6 @@ def find_paper(thresh, debug_image=None):
 
     rect = order_points(rect_pts)
 
-    # Output: canonical A4-ish canvas
     dst = np.array([
         [0, 0], [1000, 0], [1000, 1414], [0, 1414]
     ], dtype="float32")

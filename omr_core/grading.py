@@ -1,15 +1,4 @@
 def grade_answers(student_answers, answer_key):
-    """
-    Grades the detected answers against the answer key.
-
-    Args:
-        student_answers (dict): Dictionary of student's answers {1: 'A', 2: 'B', ...}
-                                Can also contain 'DOUBLE' for double-bubble answers.
-        answer_key (dict): Dictionary of correct answers {1: 'A', 2: 'C', ...}
-
-    Returns:
-        dict: A dictionary containing the score, summary (counts), and detailed results.
-    """
     correct = 0
     wrong = 0
     empty = 0
@@ -54,4 +43,4 @@ def grade_answers(student_answers, answer_key):
         'score': round(score, 2), 
         'summary': summary_data,
         'details': details
-    }
+    }

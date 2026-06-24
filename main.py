@@ -60,17 +60,7 @@ async def read_image_file(file: UploadFile) -> np.ndarray:
 
 
 def find_paper_with_fallback(image: np.ndarray):
-    """
-    Detect markers with fallback padding for auto-cropped scanner images.
 
-    Returns (warped_gray, answers_ready) or raises HTTPException.
-    
-    Pipeline:
-    1. preprocess_for_markers() → binary for marker detection
-    2. find_paper(binary) → (warped_binary, M_warp)
-    3. Warp original grayscale using M_warp → warped_gray
-    4. preprocess_for_answers(warped_gray) → enhanced for bubble detection
-    """
 
     def _try_detect(src_image):
         """Attempt marker detection on a source image. Returns (warped_ready, warped_gray) or None."""
@@ -89,7 +79,7 @@ def find_paper_with_fallback(image: np.ndarray):
         # Enhance for answer detection
         warped_ready = preprocess_for_answers(warped_gray)
 
-        return warped_ready
+        return warped_ready, warped_gray
 
     # --- Attempt 1: direct ---
     result = _try_detect(image)
@@ -110,23 +100,26 @@ def find_paper_with_fallback(image: np.ndarray):
 
 
 def process_ljk(image: np.ndarray, num_questions: int = 30, debug: bool = False):
-    """
-    Full pipeline: raw image → answers dict.
-    """
-    warped_ready = find_paper_with_fallback(image)
 
-    if warped_ready is None:
-        return None, None
+    result = find_paper_with_fallback(image)
+
+    if result is None:
+        return None, None, None, None
+
+    warped_ready, warped_gray = result
 
     # Detect answers on enhanced grayscale
     answers = detect_answers(warped_ready, num_questions=num_questions, debug=debug)
 
-    return answers, warped_ready
+    # Perform Name & ID OCR
+    from omr_core.ocr import extract_name_and_id
+    student_name, student_id = extract_name_and_id(warped_gray)
+
+    return answers, warped_ready, student_name, student_id
 
 
-# ──────────────────────────────────────────────────────────────
+
 # ENDPOINTS
-# ──────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
@@ -137,7 +130,7 @@ async def health():
 async def upload_key(file: UploadFile = File(...)):
     image = await read_image_file(file)
     try:
-        key, _ = process_ljk(image, num_questions=30, debug=False)
+        key, _, _, _ = process_ljk(image, num_questions=30, debug=False)
         if key is None:
             raise HTTPException(status_code=400,
                 detail="Kertas LJK tidak terdeteksi. Pastikan foto jelas & background kontras.")
@@ -177,7 +170,7 @@ async def scan(
 
     try:
         # 3. Full OMR pipeline
-        student_answers, _ = process_ljk(image, num_questions=num_questions, debug=False)
+        student_answers, _, student_name, student_id = process_ljk(image, num_questions=num_questions, debug=False)
 
         if student_answers is None:
             raise HTTPException(status_code=400,
@@ -186,7 +179,7 @@ async def scan(
         # 4. Grade
         result = grade_answers(student_answers, answer_key)
 
-        # 5. Build response (FlutterFlow-friendly list format)
+        # 5. Build response 
         details_list = []
         if "details" in result:
             for q_num, info in result["details"].items():
@@ -200,6 +193,8 @@ async def scan(
 
         return {
             "score": result.get("score", 0),
+            "student_name": student_name,
+            "student_id": student_id,
             "summary": result.get("summary", {}),
             "student_answers": student_answers,
             "details": details_list,
