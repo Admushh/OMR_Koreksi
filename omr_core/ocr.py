@@ -26,62 +26,14 @@ def get_ocr_engine():
 
 def remove_grid_lines(crop_img):
     """
-    Remove horizontal and vertical grid lines from Name/ID boxes cleanly.
-    Identifies grid cells using contour detection, erases their boundaries,
-    filters out noise dots, and pads the crop with white space for high-accuracy OCR.
+    Pad the crop with white space for OCR engine.
+    (Grid line removal is skipped to keep the printed lines intact).
     """
     if len(crop_img.shape) == 3:
         gray = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
     else:
         gray = crop_img.copy()
-        
-    h, w = gray.shape
-    
-    # 1. Binarize (invert so lines/text are white, paper is black)
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # 2. Find contours of the cells in the thresholded image
-    contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Filter contours that match the cell size
-    cell_boxes = []
-    for c in contours:
-        x_box, y_box, w_box, h_box = cv2.boundingRect(c)
-        aspect = w_box / float(h_box) if h_box > 0 else 0
-        
-        # Grid cell dimensions: width around 25-55, height around 20-40
-        if 25 < w_box < 55 and 20 < h_box < 40 and 0.8 < aspect < 2.0:
-            cell_boxes.append((x_box, y_box, w_box, h_box))
-            
-    # 3. Erase the borders of all detected cells (draw black rectangles on binarized image)
-    cleaned = thresh.copy()
-    for (x_box, y_box, w_box, h_box) in cell_boxes:
-        cv2.rectangle(cleaned, (x_box, y_box), (x_box + w_box, y_box + h_box), 0, 3)
-        
-    # Also erase top/bottom borders using horizontal morphology to catch any left-over edge lines
-    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (80, 1))
-    detect_horizontal = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, horizontal_kernel, iterations=1)
-    kernel_h_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3))
-    detect_horizontal = cv2.dilate(detect_horizontal, kernel_h_dilate, iterations=1)
-    
-    cleaned = cv2.subtract(cleaned, detect_horizontal)
-    
-    # 4. Remove small noise components (like leftover dots from grid intersections)
-    # Any component with an area less than 12 pixels is erased.
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(cleaned)
-    for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] < 12:
-            cleaned[labels == i] = 0
-            
-    # 5. Dilate slightly to heal characters
-    kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    cleaned = cv2.dilate(cleaned, kernel_dilate, iterations=1)
-    
-    # 6. Invert back to standard black text on white paper
-    cleaned_inverted = cv2.bitwise_not(cleaned)
-    
-    # 7. Pad with white pixels (15px top/bottom, 20px left/right) to give OCR breathing room
-    padded = cv2.copyMakeBorder(cleaned_inverted, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=255)
+    padded = cv2.copyMakeBorder(gray, 15, 15, 20, 20, cv2.BORDER_CONSTANT, value=255)
     return padded
 
 
@@ -125,16 +77,89 @@ def map_lookalike_digits(text: str) -> str:
     return "".join(mapping.get(char, char) for char in text)
 
 
+def get_name_id_y_coords(warped_gray):
+    """
+    Locate the exact top, middle, and bottom boundaries of the Name/ID boxes
+    dynamically using row averages (projection profile) on the grayscale image.
+    Returns (y_top, y_mid, y_bot).
+    """
+    h_img, w_img = warped_gray.shape[:2]
+    # Restrict search area to X in [245:780] and Y in [160:280]
+    y_start, y_end = max(0, 160), min(h_img, 280)
+    x_start, x_end = max(0, 245), min(w_img, 780)
+    
+    roi = warped_gray[y_start:y_end, x_start:x_end]
+    row_means = np.mean(roi, axis=1)
+    
+    # Find local minima (where the black horizontal border lines lie)
+    minima = []
+    for y in range(2, len(row_means) - 2):
+        val = row_means[y]
+        if val < row_means[y-1] and val < row_means[y-2] and val < row_means[y+1] and val < row_means[y+2]:
+            if val < 220:  # Grid lines are significantly darker than paper background
+                actual_y = y + y_start
+                if not minima or actual_y - minima[-1] > 10:
+                    minima.append(actual_y)
+                    
+    # We expect 3 horizontal borders (Name top, middle divider, ID bottom)
+    if len(minima) >= 3:
+        # Search for a sequence of 3 peaks with reasonable spacing (each row is ~30px tall)
+        for i in range(len(minima) - 2):
+            p1, p2, p3 = minima[i], minima[i+1], minima[i+2]
+            if 20 <= (p2 - p1) <= 45 and 20 <= (p3 - p2) <= 45:
+                return p1, p2, p3
+                
+    # Fallback to defaults if detection fails
+    return 189, 219, 249
+
+
+def get_grid_x_bounds(warped_gray, y_top, y_bot):
+    """
+    Locate the exact starting X coordinate of the cell grid (first vertical divider)
+    and the ending X coordinates for Name and ID rows using a multi-line comb search.
+    """
+    roi = warped_gray[y_top:y_bot, :]
+    _, thresh = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    col_sums = np.sum(thresh, axis=0)
+    
+    best_x_start = 220
+    best_cell_width = 42.7
+    max_score = 0
+    
+    # Search grid start X in range [215:230] and cell width in [41.5:43.5]
+    for x_start in range(215, 230):
+        for w_val in range(415, 436, 1):
+            cell_width = w_val / 10.0
+            score = 0
+            for i in range(14):  # 14 vertical line dividers
+                idx = int(round(x_start + i * cell_width))
+                if idx < len(col_sums):
+                    score += np.max(col_sums[idx - 1 : idx + 2])
+            if score > max_score:
+                max_score = score
+                best_x_start = x_start
+                best_cell_width = cell_width
+                
+    x_end_name = int(round(best_x_start + 13 * best_cell_width))
+    x_end_id = int(round(best_x_start + 10 * best_cell_width))
+    
+    return best_x_start, x_end_name, x_end_id
+
+
 def extract_name_and_id(warped_gray):
     """
     Extract Name and ID (Nomor Induk) text from the warped grayscale sheet image.
-    
-    Name ROI: Y[185:225], X[245:780]
-    Nomor Induk ROI: Y[215:255], X[245:660]
+    Determines coordinates dynamically to handle vertical and horizontal offsets.
     """
-    # Crop ROIs
-    name_crop = warped_gray[185:225, 245:780]
-    id_crop = warped_gray[215:255, 245:660]
+    # Dynamically locate horizontal line coordinates
+    y_top, y_mid, y_bot = get_name_id_y_coords(warped_gray)
+
+    # Dynamically locate the vertical divider lines of the cell grid
+    x_start, x_end_name, x_end_id = get_grid_x_bounds(warped_gray, y_top, y_bot)
+
+    # Crop Name and ID ROIs using precise dynamic coordinates matching the grid lines
+    name_crop = warped_gray[y_top : y_mid + 1, x_start : x_end_name + 1]
+    id_crop = warped_gray[y_mid : y_bot + 1, x_start : x_end_id + 1]
 
     # Pre-process crops by dynamically removing grid borders and padding
     name_cleaned = remove_grid_lines(name_crop)

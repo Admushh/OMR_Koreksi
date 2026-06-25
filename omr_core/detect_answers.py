@@ -59,10 +59,11 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
         std_score = np.std(scores)
 
         # Tuned thresholds to avoid false positives
-        Z_THRESH = 1.5
-        MIN_ABS_DIFF = 20.0
+        Z_THRESH = 1.2
+        MIN_ABS_DIFF = 10.0
+        MIN_STD_SCORE = 5.0
 
-        if std_score < 8.0:
+        if std_score < MIN_STD_SCORE:
             # Very uniform scores = all empty (no filled bubble)
             filled = []
         else:
@@ -72,18 +73,20 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
                 if s >= threshold and (s - mean_score) >= MIN_ABS_DIFF
             ]
 
+        # Initialize second_max for debug overlay
+        scores_sorted = sorted(scores)
+        second_max = scores_sorted[-2]
+
         if len(filled) == 0:
             answer = None
-        elif len(filled) == 1:
-            answer = OPTIONS[filled[0]]
         else:
-            # Multiple filled — check if truly double or just one dominant
             top_idx = scores.index(max_score)
-            scores_sorted = sorted(scores)
-            second_max = scores_sorted[-2]
-
-            if max_score > 0 and second_max >= max_score * 0.85:
+            # Check for DOUBLE bubble: if second max is close to max and significantly above empty baseline
+            mean_other = np.mean(scores_sorted[:-2])
+            if second_max >= max_score * 0.85 and (second_max - mean_other) > 10.0:
                 answer = "DOUBLE"
+            elif len(filled) == 1:
+                answer = OPTIONS[filled[0]]
             else:
                 answer = OPTIONS[top_idx]
 
@@ -98,7 +101,7 @@ def _read_column(working_gray, x_start, x_end, y_start, y_end,
                 gy2 = yb - 4
                 
                 # Pick color
-                if answer == "DOUBLE" and opt_idx in filled:
+                if answer == "DOUBLE" and scores[opt_idx] >= second_max:
                     color = (0, 0, 255) # Red for double
                 elif answer == OPTIONS[opt_idx]:
                     color = (0, 255, 0) # Green for chosen

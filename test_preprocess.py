@@ -112,12 +112,27 @@ def process_full_debug(image):
             cv2.imwrite("11a_sample_roi_soal_1_murni.jpg", roi_row_img)
 
         # =========================================================
-        # TAHAP 4: DETEKSI JAWABAN (Z-SCORE)
+        # TAHAP 4: DETEKSI JAWABAN (Z-SCORE) & OCR (COMBINED)
         # =========================================================
+        from omr_core.ocr import extract_name_and_id
+        student_name, student_id = extract_name_and_id(warped_gray)
+        
+        print("\n=============================================")
+        print("  OCR EXTRACTION RESULT")
+        print("=============================================")
+        print(f"  Student Name: '{student_name}'")
+        print(f"  Student ID  : '{student_id}'")
+        print("=============================================\n")
+
         detect_answers(warped_ready, num_questions=30, debug=True)
         
         if os.path.exists("debug_grid_overlay.png"):
             final_res = cv2.imread("debug_grid_overlay.png")
+            # Overlay name & ID on the top section of the warped final debug image
+            cv2.putText(final_res, f"OCR Name: {student_name}", (80, 80), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+            cv2.putText(final_res, f"OCR ID: {student_id}", (80, 115), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
             cv2.imwrite("12_final_zscore_result.jpg", final_res)
             steps.append(("10. Final Result", final_res))
         else:
@@ -161,7 +176,7 @@ def show_grid(steps):
 # MAIN
 # =========================
 if __name__ == "__main__":
-    img = cv2.imread("LJK_REVISI.png") # UBAH NAMA FILE GAMBAR LU DI SINI
+    img = cv2.imread("IMG_3345.png") # UBAH NAMA FILE GAMBAR LU DI SINI
     
     if img is not None:
         steps = process_full_debug(img)

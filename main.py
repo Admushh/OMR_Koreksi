@@ -22,9 +22,6 @@ app.add_middleware(
 
 ANSWER_KEY_PATH = "answer_key.json"
 
-# ──────────────────────────────────────────────────────────────
-# HELPERS
-# ──────────────────────────────────────────────────────────────
 
 def load_answer_key():
     if not os.path.exists(ANSWER_KEY_PATH):
@@ -152,7 +149,7 @@ async def upload_key(file: UploadFile = File(...)):
 async def scan(
     file: UploadFile = File(...),
     answer_key_json: str = Form(None),
-    num_questions: int = Form(30),
+    num_questions: int = Form(None),
 ):
     # 1. Resolve answer key
     if answer_key_json:
@@ -164,6 +161,10 @@ async def scan(
                 detail="Format kunci jawaban (JSON) tidak valid.")
     else:
         answer_key = load_answer_key()
+
+    # Automatically set num_questions based on answer key length if not provided
+    if num_questions is None:
+        num_questions = len(answer_key) if answer_key else 30
 
     # 2. Read image
     image = await read_image_file(file)
