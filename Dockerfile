@@ -41,7 +41,8 @@ COPY main.py .
 COPY omr_core/ ./omr_core/
 
 # Create a non-root user for security
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser && \
+    chown -R appuser:appuser /app
 USER appuser
 
 # Expose FastAPI default port
