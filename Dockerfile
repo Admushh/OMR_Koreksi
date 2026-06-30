@@ -46,7 +46,9 @@ ENV FLAGS_use_onednn=0 \
     FLAGS_use_mkldnn=0 \
     FLAGS_enable_pir_api=0 \
     FLAGS_enable_pir_in_executor=0 \
-    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
+    PADDLE_DISABLE_ONEDNN=1 \
+    FLAGS_new_executor_use_interpret_only=0
 
 # Create a non-root user for security
 RUN useradd --create-home appuser && \

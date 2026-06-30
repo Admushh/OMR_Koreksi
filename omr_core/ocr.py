@@ -1,12 +1,13 @@
 import cv2
 import numpy as np
 import os
-import sys
 
-# Disable oneDNN/MKLDNN execution in paddle to bypass Windows CPU PIR bug
-os.environ["FLAGS_use_onednn"] = "0"
-os.environ["FLAGS_use_mkldnn"] = "0"
-os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+# HARUS sebelum import paddle/paddleocr apapun
+os.environ["FLAGS_use_onednn"]              = "0"
+os.environ["FLAGS_use_mkldnn"]              = "0"
+os.environ["FLAGS_enable_pir_api"]          = "0"
+os.environ["FLAGS_enable_pir_in_executor"]  = "0"
+os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "1"
 
 _ocr_engine = None
 
@@ -19,7 +20,12 @@ def get_ocr_engine():
         _ocr_engine = PaddleOCR(
             lang='en',
             use_doc_orientation_classify=False,
-            use_textline_orientation=False
+            use_textline_orientation=False,
+            use_angle_cls=False,
+            use_gpu=False,
+            enable_mkldnn=False,     # eksplisit disable MKL-DNN di level PaddleOCR
+            ocr_version='PP-OCRv4', # PP-OCRv4 stabil di CPU, hindari v6
+            show_log=False
         )
     return _ocr_engine
 
@@ -147,31 +153,29 @@ def get_grid_x_bounds(warped_gray, y_top, y_bot):
 
 
 def _extract_text_from_result(ocr_res) -> str:
+    """
+    Parse PaddleOCR 2.x output format:
+    [ [ [ [bbox], (text, confidence) ], ... ] ]
+    """
     if not ocr_res:
         return ""
     
-    first_item = ocr_res[0]
-    if hasattr(first_item, "get"):
-        texts = first_item.get("rec_texts", [])
-        return " ".join(str(t) for t in texts)
-        
-    if isinstance(ocr_res, list):
-        if isinstance(first_item, tuple) and len(first_item) == 2 and isinstance(first_item[0], str):
-            return first_item[0]
-            
-        if isinstance(first_item, list):
-            if len(first_item) > 0 and isinstance(first_item[0], tuple) and len(first_item[0]) == 2 and isinstance(first_item[0][0], str):
-                return first_item[0][0]
-                
-            texts = []
-            for line in first_item:
-                if isinstance(line, (list, tuple)) and len(line) >= 2:
-                    text_info = line[1]
-                    if isinstance(text_info, (list, tuple)) and len(text_info) >= 1:
-                        texts.append(str(text_info[0]))
-            return " ".join(texts)
-            
-    return ""
+    texts = []
+    # PaddleOCR 2.x: ocr_res[0] adalah list of lines per page
+    page = ocr_res[0]
+    if not page:
+        return ""
+    
+    for line in page:
+        try:
+            # line = [ [bbox_points], (text_str, confidence_float) ]
+            text_info = line[1]
+            if isinstance(text_info, (list, tuple)) and len(text_info) >= 1:
+                texts.append(str(text_info[0]))
+        except (IndexError, TypeError):
+            continue
+    
+    return " ".join(texts)
 
 
 def extract_name_and_id(warped_gray):

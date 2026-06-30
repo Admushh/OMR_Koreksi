@@ -1,8 +1,17 @@
+import os
+
+# HARUS paling atas, sebelum import paddle/paddleocr/paddlex apapun
+os.environ["FLAGS_use_onednn"]           = "0"
+os.environ["FLAGS_use_mkldnn"]           = "0"
+os.environ["FLAGS_enable_pir_api"]       = "0"
+os.environ["FLAGS_enable_pir_in_executor"] = "0"
+os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "1"
+
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
-import os
 import json
 
 from omr_core.preprocess import preprocess_for_markers, preprocess_for_answers
