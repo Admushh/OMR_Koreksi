@@ -146,6 +146,34 @@ def get_grid_x_bounds(warped_gray, y_top, y_bot):
     return best_x_start, x_end_name, x_end_id
 
 
+def _extract_text_from_result(ocr_res) -> str:
+    if not ocr_res:
+        return ""
+    
+    first_item = ocr_res[0]
+    if hasattr(first_item, "get"):
+        texts = first_item.get("rec_texts", [])
+        return " ".join(str(t) for t in texts)
+        
+    if isinstance(ocr_res, list):
+        if isinstance(first_item, tuple) and len(first_item) == 2 and isinstance(first_item[0], str):
+            return first_item[0]
+            
+        if isinstance(first_item, list):
+            if len(first_item) > 0 and isinstance(first_item[0], tuple) and len(first_item[0]) == 2 and isinstance(first_item[0][0], str):
+                return first_item[0][0]
+                
+            texts = []
+            for line in first_item:
+                if isinstance(line, (list, tuple)) and len(line) >= 2:
+                    text_info = line[1]
+                    if isinstance(text_info, (list, tuple)) and len(text_info) >= 1:
+                        texts.append(str(text_info[0]))
+            return " ".join(texts)
+            
+    return ""
+
+
 def extract_name_and_id(warped_gray):
     """
     Extract Name and ID (Nomor Induk) text from the warped grayscale sheet image.
@@ -180,14 +208,13 @@ def extract_name_and_id(warped_gray):
     name_text = ""
     try:
         name_res = engine.ocr(name_bgr)
-        if name_res and name_res[0]:
-            raw_name = " ".join(name_res[0].get('rec_texts', [])).strip().upper()
-            # Map lookalike numbers to letters (e.g. '1' -> 'I', '5' -> 'S')
-            mapped_name = map_lookalike_letters(raw_name)
-            # Clean: keep only letters and spaces
-            name_text = "".join([c for c in mapped_name if c.isalpha() or c.isspace()]).strip()
-            # Normalize spaces (collapse multiple spaces to single space)
-            name_text = " ".join(name_text.split())
+        raw_name = _extract_text_from_result(name_res).strip().upper()
+        # Map lookalike numbers to letters (e.g. '1' -> 'I', '5' -> 'S')
+        mapped_name = map_lookalike_letters(raw_name)
+        # Clean: keep only letters and spaces
+        name_text = "".join([c for c in mapped_name if c.isalpha() or c.isspace()]).strip()
+        # Normalize spaces (collapse multiple spaces to single space)
+        name_text = " ".join(name_text.split())
     except Exception as e:
         print(f"[OCR] Error scanning name: {e}")
 
@@ -195,12 +222,11 @@ def extract_name_and_id(warped_gray):
     id_text = ""
     try:
         id_res = engine.ocr(id_bgr)
-        if id_res and id_res[0]:
-            raw_id = "".join(id_res[0].get('rec_texts', [])).strip()
-            # Map lookalike characters to digits (e.g. 'i'/'I' -> '1', 'g' -> '9')
-            mapped_id = map_lookalike_digits(raw_id)
-            # Clean: keep only digits
-            id_text = "".join([c for c in mapped_id if c.isdigit()])
+        raw_id = _extract_text_from_result(id_res).strip()
+        # Map lookalike characters to digits (e.g. 'i'/'I' -> '1', 'g' -> '9')
+        mapped_id = map_lookalike_digits(raw_id)
+        # Clean: keep only digits
+        id_text = "".join([c for c in mapped_id if c.isdigit()])
     except Exception as e:
         print(f"[OCR] Error scanning ID: {e}")
 
