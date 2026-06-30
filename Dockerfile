@@ -40,6 +40,14 @@ COPY --from=builder /install /usr/local
 COPY main.py .
 COPY omr_core/ ./omr_core/
 
+# Disable oneDNN/MKLDNN and PIR to prevent PaddlePaddle CPU inference bugs
+# Must be set as ENV (not in Python) so they're active before Paddle initializes
+ENV FLAGS_use_onednn=0 \
+    FLAGS_use_mkldnn=0 \
+    FLAGS_enable_pir_api=0 \
+    FLAGS_enable_pir_in_executor=0 \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+
 # Create a non-root user for security
 RUN useradd --create-home appuser && \
     chown -R appuser:appuser /app
